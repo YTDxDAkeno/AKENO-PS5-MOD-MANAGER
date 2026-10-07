@@ -1,0 +1,7 @@
+build/
+build-*/
+/akeno-data/
+*.swp
+.DS_Store
+/compile_commands.json
+.cache/
