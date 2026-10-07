@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "LocalHttpServer.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -137,14 +138,24 @@ void LocalHttpServer::handleConnection(int fd) {
     }
     std::string out = "HTTP/1.1 " + std::to_string(response.status) + " Status\r\n";
     out += "Content-Type: " + response.contentType + "\r\n";
-    if (!response.omitContentLength) {
+    if (!response.contentLengthOverride.empty()) {
+        out += "Content-Length: " + response.contentLengthOverride + "\r\n";
+    } else if (!response.omitContentLength) {
         out += "Content-Length: " + std::to_string(response.body.size()) + "\r\n";
     }
-    out += "Connection: close\r\n\r\n";
-    if (request.method != "HEAD") {
-        out += response.body;
+    for (const auto& [name, value] : response.headers) {
+        out += name + ": " + value + "\r\n";
     }
-    sendAll(fd, out);
+    out += "Connection: close\r\n\r\n";
+    if (!sendAll(fd, out) || request.method == "HEAD") {
+        return;
+    }
+    const std::string body = response.body.substr(0, std::min(response.body.size(), response.closeAfterBytes));
+    const std::size_t chunk = response.chunkSize > 0 ? response.chunkSize : body.size();
+    for (std::size_t offset = 0; offset < body.size() && !stopping_; offset += chunk) {
+        if (!sendAll(fd, body.substr(offset, chunk))) return;
+        if (response.chunkDelayMs > 0) std::this_thread::sleep_for(std::chrono::milliseconds(response.chunkDelayMs));
+    }
 }
 
 }  // namespace akeno::test

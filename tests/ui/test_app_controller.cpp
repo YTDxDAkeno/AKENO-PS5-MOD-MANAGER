@@ -236,3 +236,50 @@ TEST_CASE("text entry edits UTF-8 text and reports the result once") {
     CHECK(calls == 2);
     CHECK_FALSE(result.has_value());
 }
+
+TEST_CASE("download requests are built from the catalogue and checked against the rules") {
+    ControllerFixture f;
+    const providers::GameContext game{"PPSA90001", "01.011.000"};
+    auto pumpNotices = [&](std::size_t count) {
+        REQUIRE(pumpUntil(f.queue, [&] { return f.state().notices.size() >= count; }));
+        return f.state().notices.back();
+    };
+
+    f.controller->startDownload({"akeno-catalogue", "example-blade/photo-mode-ue4ss"}, game, true);
+    auto notice = pumpNotices(1);
+    CHECK(notice.kind == ToastKind::Error);
+    CHECK(notice.text.find("Akeno will not download this mod") != std::string::npos);
+
+    f.controller->startDownload({"akeno-catalogue", "example-blade/sharper-foliage"}, game, false);
+    notice = pumpNotices(2);
+    CHECK(notice.kind == ToastKind::Error);
+    CHECK(notice.text.find("EXPERIMENTAL") != std::string::npos);
+    CHECK(f.context->downloads().snapshot().empty());
+
+    f.controller->startDownload({"akeno-catalogue", "example-blade/crimson-outfit"}, game, false);
+    notice = pumpNotices(3);
+    CHECK(notice.kind == ToastKind::Success);
+    CHECK(notice.text == "Added to Downloads: Crimson Outfit Recolour");
+    auto items = f.context->downloads().snapshot();
+    REQUIRE(items.size() == 1);
+    const auto& request = items[0].record.request;
+    CHECK(request.modVersion == "1.2.0");
+    CHECK(request.compatibility == "VERIFIED");
+    CHECK(request.gameVersion == "01.011.000");
+    CHECK(request.format == mods::ArchiveFormat::Zip);
+    CHECK(request.expectedSha256.size() == 64);
+    CHECK(f.state().downloads.items.size() == 1);
+
+    f.controller->startDownload({"akeno-catalogue", "example-blade/crimson-outfit"}, game, false);
+    notice = pumpNotices(4);
+    CHECK(notice.text == "Already in Downloads: Crimson Outfit Recolour");
+
+    // Experimental with confirmation is accepted.
+    f.controller->startDownload({"akeno-catalogue", "example-blade/sharper-foliage"}, game, true);
+    notice = pumpNotices(5);
+    CHECK(notice.kind == ToastKind::Success);
+    CHECK(f.context->downloads().snapshot().size() == 2);
+
+    REQUIRE(f.controller->removeDownload(items[0].record.id).ok());
+    CHECK(f.state().downloads.items.size() == 1);
+}

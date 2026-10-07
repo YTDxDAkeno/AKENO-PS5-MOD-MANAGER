@@ -18,9 +18,6 @@ using providers::CompatibilityStatus;
 
 namespace {
 
-constexpr std::string_view kNotYetInstallable =
-    "Downloading comes in the next version, installing after that. Nothing on your console was changed.";
-
 const char* orderLabel(BrowseOrder order) {
     switch (order) {
         case BrowseOrder::Featured: return "Featured";
@@ -514,7 +511,41 @@ const providers::ModDetails* ModDetailScreen::details(const UiEnv& env) const {
     return &*view.details;
 }
 
+namespace {
+
+// Downloading needs a finished system check that found the network and storage usable.
+std::optional<std::string> downloadBlocker(const UiEnv& env) {
+    const auto& report = env.state.systemCheck.report;
+    if (!report) return std::string("The system check is still running.");
+    if (report->features.downloading.state != app::FeatureState::Available) {
+        return "Downloading is not available: " + report->features.downloading.reason;
+    }
+    return std::nullopt;
+}
+
+std::string downloadLabel(const downloads::DownloadInfo& info) {
+    const auto& record = info.record;
+    const int percent = record.request.expectedSize == 0
+                            ? 0
+                            : static_cast<int>(record.bytesDone * 100 / record.request.expectedSize);
+    switch (record.state) {
+        case downloads::DownloadState::Queued: return "Queued in Downloads";
+        case downloads::DownloadState::Downloading: return strings::concat("Downloading ", percent, "%");
+        case downloads::DownloadState::Paused: return strings::concat("Paused at ", percent, "%");
+        case downloads::DownloadState::Verifying: return "Verifying...";
+        case downloads::DownloadState::Completed: return "Downloaded";
+        case downloads::DownloadState::Failed: return "Download failed - retry";
+    }
+    return "Download";
+}
+
+}  // namespace
+
 void ModDetailScreen::update(UiEnv& env) {
+    bool confirmed = false;
+    if (confirmExperimental_.take(confirmed) && confirmed) {
+        env.commands.startDownload(ref_, game_, true);
+    }
     if (!requested_ || !(env.state.modDetail.ref == ref_)) {
         requested_ = true;
         env.commands.loadModDetails(ref_, game_);
@@ -539,17 +570,44 @@ NavRequest ModDetailScreen::handle(Action action, UiEnv& env) {
     }
     const providers::ModDetails* d = details(env);
     switch (kModActions[static_cast<std::size_t>(actions_.focus())]) {
-        case ModAction::Install:
+        case ModAction::Install: {
             if (d == nullptr) {
                 env.showToast("The mod details are still loading.");
-            } else if (!d->installable) {
+                break;
+            }
+            if (!d->installable) {
                 std::string reason = d->compatibilityReasons.empty() ? std::string("its compatibility label")
                                                                      : d->compatibilityReasons.front();
                 env.showToast("Akeno will not install this mod: " + reason, ToastKind::Error);
-            } else {
-                env.showToast(std::string(kNotYetInstallable), ToastKind::Warning);
+                break;
             }
+            if (const auto* existing = env.state.downloads.findForMod(ref_, d->summary.version)) {
+                if (existing->record.state == downloads::DownloadState::Completed) {
+                    env.showToast("Downloaded and checked. Installing comes in a later version.");
+                } else if (existing->record.state == downloads::DownloadState::Failed ||
+                           existing->record.state == downloads::DownloadState::Paused) {
+                    auto resumed = env.commands.resumeDownload(existing->record.id);
+                    env.showToast(resumed ? "Continuing the download" : resumed.error().message,
+                                  resumed ? ToastKind::Info : ToastKind::Error);
+                } else {
+                    env.showToast("Already in the Downloads tab.");
+                }
+                break;
+            }
+            if (auto blocker = downloadBlocker(env)) {
+                env.showToast(*blocker, ToastKind::Warning);
+                break;
+            }
+            if (d->needsConfirmation) {
+                std::vector<std::string> lines = d->compatibilityReasons;
+                lines.push_back("It is only downloaded and checked. Nothing is installed in this version.");
+                return NavRequest::push(std::make_unique<ConfirmScreen>("Download an EXPERIMENTAL mod?", std::move(lines),
+                                                                        "Download anyway",
+                                                                        confirmExperimental_.callback(), true));
+            }
+            env.commands.startDownload(ref_, game_, false);
             break;
+        }
         case ModAction::Screenshots:
             if (d != nullptr && !d->screenshots.empty()) {
                 return NavRequest::push(std::make_unique<ScreenshotViewerScreen>(d->screenshots, 0));
@@ -591,22 +649,42 @@ void ModDetailScreen::render(ICanvas& canvas, UiEnv& env) {
                 riskColor(d->risk));
 
     actions_.setCount(static_cast<int>(kModActions.size()));
+    const auto* download = env.state.downloads.findForMod(ref_, d->summary.version);
+    const auto blocker = downloadBlocker(env);
+    std::string downloadText = "Download";
+    bool downloadEnabled = d->installable && !blocker;
+    if (download != nullptr) {
+        downloadText = downloadLabel(*download);
+        downloadEnabled = download->record.state == downloads::DownloadState::Failed ||
+                          download->record.state == downloads::DownloadState::Paused;
+    }
     const std::array<std::string, 3> labels{
-        "Download & install",
+        downloadText,
         d->screenshots.empty() ? std::string("No screenshots") : strings::concat("Screenshots (", d->screenshots.size(), ")"),
         "Back"};
     const int buttonY = hero.bottom() + 84;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         const ModAction kind = kModActions[static_cast<std::size_t>(i)];
-        const bool enabled = kind == ModAction::Back || (kind == ModAction::Screenshots && !d->screenshots.empty());
+        const bool enabled = kind == ModAction::Back || (kind == ModAction::Screenshots && !d->screenshots.empty()) ||
+                             (kind == ModAction::Install && downloadEnabled);
         draw::button(canvas, {content.x, buttonY + i * 80, kHeroWidth, 66}, labels[static_cast<std::size_t>(i)],
                      actions_.focus() == i, enabled);
     }
-    canvas.drawText(d->installable ? "Downloading is not available in this version."
-                                   : "This mod cannot be installed on PS5.",
-                    {content.x, buttonY + 3 * 80, kHeroWidth, 36},
-                    TextStyle{FontRole::Small, d->installable ? theme::kTextDisabled : theme::kError, TextAlign::Left,
-                              false});
+    std::string note;
+    Color noteColor = theme::kTextDisabled;
+    if (!d->installable) {
+        note = "This mod cannot be installed on PS5.";
+        noteColor = theme::kError;
+    } else if (download != nullptr && download->record.state == downloads::DownloadState::Completed) {
+        note = "SHA-256 checked. Installing comes later.";
+    } else if (blocker && download == nullptr) {
+        note = *blocker;
+        noteColor = theme::kWarning;
+    } else {
+        note = "Downloads are checked with SHA-256. Nothing is installed.";
+    }
+    canvas.drawText(note, {content.x, buttonY + 3 * 80, kHeroWidth, 36},
+                    TextStyle{FontRole::Small, noteColor, TextAlign::Left, false});
 
     // Right column: name, author and a scrollable document.
     const int infoX = content.x + kHeroWidth + 50;

@@ -3,8 +3,8 @@
 **A console-native mod manager for jailbroken PlayStation 5 consoles. The goal: browse, download, verify, install, manage and remove mods on the PS5 itself, with no PC needed.**
 
 > **Status: 0.1.0-alpha, experimental.** This release covers **Phase 1 (a safe game library
-> browser)** and **Phase 2 (an online mod browser for the Akeno Catalogue)**.
-> It **does not download or install mods yet**, and it **never modifies game files**.
+> browser)**, **Phase 2 (an online mod browser for the Akeno Catalogue)** and **Phase 3
+> (verified downloads)**. It **does not install mods yet**, and it **never modifies game files**.
 > It has been **compiled and unit tested on a Linux host**. It has **not been tested on PS5 hardware**.
 > Do not read anything in this repository as "works on firmware 12.20" until it appears in the
 > [hardware test log](docs/compatibility.md#hardware-test-log).
@@ -46,7 +46,8 @@ ShadowMountPlus's per-title *backport* overlay (see [docs/shadowmount.md](docs/s
 | Crash-recovery journal and startup recovery prompt | implemented, unit tested |
 | Mod browser: Akeno Catalogue, search, order, details, screenshots | implemented, unit + mock tested |
 | Compatibility labels for the installed game version | implemented, unit tested |
-| Downloads, installation, profiles | **not yet** (Phases 3–6) |
+| Downloads on the console: queue, pause/resume, automatic retry, SHA-256 check, free-space reserve | implemented, unit + mock tested |
+| Extraction, analysis, installation, profiles | **not yet** (Phases 4–6) |
 
 Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 `verified`) are defined in [docs/compatibility.md](docs/compatibility.md). They are never mixed.
@@ -186,7 +187,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 0 | Research ([docs/research.md](docs/research.md)) | done |
 | 1 | Safe game browser | implemented (not hardware tested) |
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
-| 3 | Download engine | planned |
+| 3 | Download engine | implemented (not hardware tested) |
 | 4 | Mod analyser, secure extraction, dry run | planned |
 | 5 | ShadowMountPlus overlay, rollback, Vanilla | planned |
 | 6 | Load order, profiles, dependencies | planned |

@@ -14,6 +14,7 @@
 #include "akeno/core/OperationJournal.hpp"
 #include "akeno/database/Database.hpp"
 #include "akeno/database/SettingsStore.hpp"
+#include "akeno/downloads/DownloadManager.hpp"
 #include "akeno/games/GameLibrary.hpp"
 #include "akeno/logging/Logger.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
@@ -47,6 +48,9 @@ public:
     const std::optional<Error>& catalogueError() const { return catalogueError_; }
     // True when --catalogue-url set the address for this session (the setting is then ignored).
     bool catalogueOverridden() const { return catalogueOverride_.has_value(); }
+    // The download engine. Created at startup but only started by the user interface, so the
+    // headless modes never resume transfers.
+    downloads::DownloadManager& downloads() { return *downloads_; }
     logging::RingBufferSink& logRing() { return *logRing_; }
     OperationJournal& journal() { return *journal_; }
     const std::optional<OperationState>& interruptedOperation() const { return interrupted_; }
@@ -86,6 +90,7 @@ private:
     std::unique_ptr<shadowmount::ShadowMountGameProvider> gameProvider_;
     std::optional<Error> gameProviderError_;
     std::unique_ptr<games::GameLibrary> library_;
+    std::unique_ptr<downloads::DownloadManager> downloads_;
     std::shared_ptr<providers::AkenoCatalogProvider> catalogue_;
     std::optional<Error> catalogueError_;
     std::optional<std::string> catalogueOverride_;  // --catalogue-url for this session

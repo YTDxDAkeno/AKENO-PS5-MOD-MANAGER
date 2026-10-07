@@ -35,8 +35,11 @@ class CurlHttpClient final : public IHttpClient {
 public:
     explicit CurlHttpClient(CurlClientOptions options);
     Result<HttpResponse> send(const HttpRequest& request, const CancellationToken* cancel = nullptr) override;
+    Result<HttpResponse> stream(const HttpRequest& request, IBodySink& sink,
+                                const CancellationToken* cancel = nullptr) override;
 
 private:
+    Result<HttpResponse> perform(const HttpRequest& request, IBodySink* sink, const CancellationToken* cancel);
     CurlClientOptions options_;
 };
 

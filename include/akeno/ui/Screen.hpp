@@ -2,6 +2,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -64,6 +65,20 @@ private:
     std::shared_ptr<Slot> slot_ = std::make_shared<Slot>();
 };
 
+// Same idea for yes/no questions (ConfirmScreen).
+class ChoiceRequest {
+public:
+    std::function<void(bool)> callback();
+    bool take(bool& confirmed);
+
+private:
+    struct Slot {
+        bool ready = false;
+        bool confirmed = false;
+    };
+    std::shared_ptr<Slot> slot_ = std::make_shared<Slot>();
+};
+
 class Screen {
 public:
     virtual ~Screen() = default;
@@ -120,6 +135,7 @@ private:
     std::vector<std::unique_ptr<Screen>> flows_;
     Tab current_ = Tab::Home;
     std::deque<Toast> toasts_;
+    std::uint64_t lastNotice_ = 0;
 };
 
 }  // namespace akeno::ui

@@ -35,6 +35,22 @@ CommandLine parseCommandLine(int argc, const char* const* argv) {
             cl.mode = RunMode::SelfCheck;
         } else if (arg == "--list-games") {
             cl.mode = RunMode::ListGames;
+        } else if (arg == "--download-test") {
+            cl.mode = RunMode::DownloadTest;
+        } else if (arg == "--download-test-url") {
+            if (auto value = needValue(arg)) cl.downloadTestUrl = std::string(*value);
+        } else if (arg == "--download-test-sha256") {
+            if (auto value = needValue(arg)) cl.downloadTestSha256 = std::string(*value);
+        } else if (arg == "--download-test-size") {
+            if (auto value = needValue(arg)) {
+                std::uint64_t size = 0;
+                auto [ptr, ec] = std::from_chars(value->data(), value->data() + value->size(), size);
+                if (ec != std::errc() || ptr != value->data() + value->size() || size == 0) {
+                    cl.errors.push_back("--download-test-size must be a positive number of bytes");
+                } else {
+                    cl.downloadTestSize = size;
+                }
+            }
         } else if (arg == "--help" || arg == "-h") {
             cl.mode = RunMode::Help;
         } else if (arg == "--version") {
@@ -85,6 +101,12 @@ CommandLine parseCommandLine(int argc, const char* const* argv) {
             cl.errors.push_back("unknown option: " + std::string(arg));
         }
     }
+    const int customTest = static_cast<int>(cl.downloadTestUrl.has_value()) +
+                           static_cast<int>(cl.downloadTestSha256.has_value()) +
+                           static_cast<int>(cl.downloadTestSize.has_value());
+    if (customTest != 0 && customTest != 3) {
+        cl.errors.push_back("--download-test-url, --download-test-sha256 and --download-test-size go together");
+    }
     return cl;
 }
 
@@ -96,6 +118,10 @@ std::string usageText() {
            "  (no option)              start the controller user interface\n"
            "  --self-check             run the system check, write a report to logs/ and exit\n"
            "  --list-games             list games reported by ShadowMountPlus and exit\n"
+           "  --download-test          download a small harmless file through the download\n"
+           "                           engine, check its SHA-256, delete it and exit\n"
+           "  --download-test-url <url> --download-test-sha256 <hex> --download-test-size <bytes>\n"
+           "                           use another file for --download-test\n"
            "  --data-root <dir>        application data directory\n"
            "                           (console default: /data/akeno-mod-manager)\n"
            "  --shadowmount-port <n>   ShadowMountPlus API port on 127.0.0.1 (default 10101)\n"

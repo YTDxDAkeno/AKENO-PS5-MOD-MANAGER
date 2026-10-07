@@ -14,6 +14,7 @@ namespace fs = std::filesystem;
 using logging::logger;
 
 AppContext::~AppContext() {
+    downloads_.reset();  // stops the worker before the HTTP client and database go away
     catalogue_.reset();
     library_.reset();
     gameProvider_.reset();
@@ -151,6 +152,12 @@ Result<std::unique_ptr<AppContext>> AppContext::create(const CommandLine& comman
     // 7. Mod catalogue.
     ctx->catalogueOverride_ = commandLine.catalogueUrl;
     ctx->configureCatalogue(commandLine.catalogueUrl.value_or(ctx->settings_.catalogueUrl));
+
+    // 8. Download engine (started later by the user interface).
+    downloads::DownloadManagerOptions downloadOptions;
+    downloadOptions.directory = ctx->paths_.downloads();
+    ctx->downloads_ =
+        std::make_unique<downloads::DownloadManager>(*ctx->http_, *ctx->fs_, ctx->db_.get(), std::move(downloadOptions));
     return ctx;
 }
 
@@ -196,7 +203,8 @@ SystemChecker AppContext::makeSystemChecker() {
     deps.databaseError = dbError_;
     deps.networkProbeUrl = settings_.networkProbeUrl;
     deps.build = BuildFeatures{};
-    deps.build.modBrowsing = true;  // Phase 2; downloading and installation are not implemented yet
+    deps.build.modBrowsing = true;  // Phase 2
+    deps.build.downloading = true;  // Phase 3; installation is not implemented yet
     return SystemChecker(std::move(deps));
 }
 

@@ -26,6 +26,11 @@ struct CannedResponse {
     std::string body;
     bool omitContentLength = false;   // stream until close
     int delayMs = 0;                  // wait before answering
+    std::vector<std::pair<std::string, std::string>> headers;  // extra headers
+    std::size_t chunkSize = 0;        // > 0: send the body in pieces ...
+    int chunkDelayMs = 0;             // ... with this pause between them
+    std::size_t closeAfterBytes = static_cast<std::size_t>(-1);  // drop the connection early
+    std::string contentLengthOverride; // announce a different Content-Length
 };
 
 class LocalHttpServer {

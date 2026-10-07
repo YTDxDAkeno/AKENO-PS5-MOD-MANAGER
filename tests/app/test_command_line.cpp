@@ -34,6 +34,13 @@ TEST_CASE("headless modes and options") {
     CHECK(catalogue.errors.empty());
     CHECK(catalogue.catalogueUrl == std::optional<std::string>("http://127.0.0.1:10101/catalog/"));
     CHECK_FALSE(parse({"--catalogue-url"}).errors.empty());
+    CHECK(parse({"--download-test"}).mode == RunMode::DownloadTest);
+    auto custom = parse({"--download-test", "--download-test-url", "http://127.0.0.1:10101/files/a.zip",
+                         "--download-test-sha256", "abc", "--download-test-size", "244"});
+    CHECK(custom.errors.empty());
+    CHECK(custom.downloadTestSize == std::optional<std::uint64_t>(244));
+    CHECK_FALSE(parse({"--download-test", "--download-test-url", "https://x/a.zip"}).errors.empty());
+    CHECK_FALSE(parse({"--download-test-size", "0"}).errors.empty());
     auto window = parse({"--window", "1920x1080"});
     CHECK(window.windowWidth == 1920);
     CHECK(window.windowHeight == 1080);

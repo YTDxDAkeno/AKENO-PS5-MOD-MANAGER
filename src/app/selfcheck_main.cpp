@@ -2,7 +2,8 @@
 // AkenoSelfCheck: the first rung of the hardware testing ladder (docs/safety-model.md §9).
 // A separate, minimal payload without SDL or video output, so it can be sent to any ELF loader
 // (which usually cannot pass arguments). It runs the system check, lists the games reported by
-// ShadowMountPlus, writes both reports to /data/akeno-mod-manager/logs/ and exits.
+// ShadowMountPlus and, when the network works, downloads and verifies a small harmless file
+// (deleted again). The reports go to /data/akeno-mod-manager/logs/.
 #include <cstdio>
 
 #include "akeno/app/AppContext.hpp"
@@ -24,10 +25,16 @@ int main(int argc, char* argv[]) {
         platform::createPlatform()->notify("Akeno self-check could not start: " + context.error().message);
         return 1;
     }
-    int exitCode = app::runSelfCheck(*context.value());
+    app::SystemReport report;
+    int exitCode = app::runSelfCheck(*context.value(), &report);
     if (context.value()->library() != nullptr) {
         // Only reads the list; a failure is reported in the log and the notification.
         (void)app::runListGames(*context.value());
+    }
+    // Ladder steps 5 and 6, only when the network check passed.
+    const app::CheckResult* network = report.find(app::CheckId::Networking);
+    if (network != nullptr && network->status == app::CheckStatus::Ok) {
+        (void)app::runDownloadTest(*context.value(), app::builtinDownloadTest());
     }
     logging::logger().flush();
     return exitCode;

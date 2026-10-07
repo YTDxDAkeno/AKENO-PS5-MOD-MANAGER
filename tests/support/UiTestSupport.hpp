@@ -3,6 +3,7 @@
 // implementation that records what was requested.
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <string>
@@ -65,6 +66,14 @@ public:
     std::vector<providers::SearchQuery> listRequests;
     std::vector<providers::ModRef> detailRequests;
     std::vector<std::string> remoteImages;  // urls requested
+    struct DownloadCall {
+        providers::ModRef ref;
+        bool confirmed = false;
+    };
+    std::vector<DownloadCall> downloadStarts;
+    std::vector<std::string> paused;
+    std::vector<std::string> resumed;
+    std::vector<std::string> removed;
     std::string textPrompt;
     std::string textInitial;
     std::function<void(std::optional<std::string>)> textDone;
@@ -113,6 +122,25 @@ public:
         state_.modDetail.ref = ref;
         state_.modDetail.loading = true;
         ++state_.modDetail.request;
+    }
+    void startDownload(const providers::ModRef& ref, const std::optional<providers::GameContext>&,
+                       bool confirmed) override {
+        downloadStarts.push_back({ref, confirmed});
+    }
+    Status pauseDownload(const std::string& id) override {
+        paused.push_back(id);
+        return {};
+    }
+    Status resumeDownload(const std::string& id) override {
+        resumed.push_back(id);
+        return {};
+    }
+    Status removeDownload(const std::string& id) override {
+        removed.push_back(id);
+        auto& items = state_.downloads.items;
+        items.erase(std::remove_if(items.begin(), items.end(), [&](const auto& i) { return i.record.id == id; }),
+                    items.end());
+        return {};
     }
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override {

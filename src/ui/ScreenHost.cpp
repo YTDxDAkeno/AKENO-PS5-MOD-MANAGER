@@ -46,6 +46,22 @@ bool TextRequest::take(std::optional<std::string>& text) {
     return true;
 }
 
+std::function<void(bool)> ChoiceRequest::callback() {
+    slot_->ready = false;
+    auto slot = slot_;
+    return [slot](bool confirmed) {
+        slot->ready = true;
+        slot->confirmed = confirmed;
+    };
+}
+
+bool ChoiceRequest::take(bool& confirmed) {
+    if (!slot_->ready) return false;
+    slot_->ready = false;
+    confirmed = slot_->confirmed;
+    return true;
+}
+
 ScreenHost::ScreenHost() = default;
 
 void ScreenHost::setTabRoot(Tab tab, std::unique_ptr<Screen> screen) {
@@ -243,6 +259,13 @@ void ScreenHost::renderTextEntry(ICanvas& canvas, const UiEnv& env) {
 }
 
 void ScreenHost::render(ICanvas& canvas, UiEnv& env) {
+    // Results of background work arrive as notices; show each one once.
+    for (const Notice& notice : env.state.notices) {
+        if (notice.serial > lastNotice_) {
+            addToast(notice.text, notice.kind, env.time);
+            lastNotice_ = notice.serial;
+        }
+    }
     Screen* screen = top();
     if (screen != nullptr) {
         screen->update(env);

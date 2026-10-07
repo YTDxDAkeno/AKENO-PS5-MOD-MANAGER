@@ -126,6 +126,48 @@ private:
     int scroll_ = 0;
     int maxScroll_ = 0;
     bool requested_ = false;
+    ChoiceRequest confirmExperimental_;
+};
+
+// Downloads tab: progress, pause/resume/retry and removal.
+class DownloadsScreen final : public Screen {
+public:
+    static constexpr int kVisibleRows = 5;
+
+    std::string title() const override { return "Downloads"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool animating(const UiEnv& env) const override;
+    const FocusList& list() const { return list_; }
+
+private:
+    FocusList list_;
+    ChoiceRequest confirmRemove_;
+    std::string removeId_;
+};
+
+// A yes/no question. Cancel is focused first; CIRCLE also cancels.
+class ConfirmScreen final : public Screen {
+public:
+    ConfirmScreen(std::string heading, std::vector<std::string> lines, std::string confirmLabel,
+                  std::function<void(bool)> done, bool dangerous = false);
+    ~ConfirmScreen() override;
+    std::string title() const override { return heading_; }
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool fullScreen() const override { return true; }
+
+private:
+    void finish(bool confirmed);
+    std::string heading_;
+    std::vector<std::string> lines_;
+    std::string confirmLabel_;
+    std::function<void(bool)> done_;
+    bool dangerous_;
+    FocusList buttons_;
 };
 
 class ScreenshotViewerScreen final : public Screen {

@@ -292,11 +292,12 @@ TEST_CASE("mod details show compatibility and never pretend to install") {
     CHECK(canvas.hasText("Recolours the outfit."));
     CHECK(canvas.hasText("Works with photo mode."));
     CHECK(canvas.hasText("Screenshots (2)"));
-    CHECK(canvas.hasText("Downloading is not available in this version."));
+    CHECK(canvas.hasText("The system check is still running."));  // downloads wait for it
     CHECK(h.commands.remoteImages.back() == "https://catalog.example/akeno/shots/1.png");
 
-    detail->handle(Action::Confirm, h.env);  // Download & install
-    CHECK(h.toasted("Nothing on your console was changed"));
+    detail->handle(Action::Confirm, h.env);  // Download
+    CHECK(h.toasted("The system check is still running."));
+    CHECK(h.commands.downloadStarts.empty());
 
     detail->handle(Action::Down, h.env);
     auto nav = detail->handle(Action::Confirm, h.env);
@@ -313,6 +314,205 @@ TEST_CASE("mod details show compatibility and never pretend to install") {
     detail->render(canvas, h.env);
     CHECK(canvas.hasText("PC ONLY"));
     CHECK(canvas.hasText("This mod cannot be installed on PS5."));
+}
+
+namespace {
+
+app::SystemReport reportWithDownloads(bool networkOk) {
+    app::SystemReport report;
+    report.checks = {
+        {app::CheckId::Networking, "Networking", networkOk ? app::CheckStatus::Ok : app::CheckStatus::Failed,
+         networkOk ? "OK" : "no connection", ""},
+        {app::CheckId::WritableStorage, "Storage", app::CheckStatus::Ok, "OK", ""},
+    };
+    app::BuildFeatures build;
+    build.modBrowsing = true;
+    build.downloading = true;
+    report.features = app::computeFeatures(report.checks, build);
+    return report;
+}
+
+downloads::DownloadInfo downloadOf(const providers::ModDetails& d, downloads::DownloadState state,
+                                   std::uint64_t done, std::string id = "0123456789abcdef") {
+    downloads::DownloadInfo info;
+    info.record.id = std::move(id);
+    info.record.request.mod = d.summary.ref;
+    info.record.request.displayName = d.summary.name;
+    info.record.request.modVersion = d.summary.version;
+    info.record.request.gameTitleId = "PPSA90001";
+    info.record.request.compatibility = "VERIFIED";
+    info.record.request.expectedSize = 1000;
+    info.record.state = state;
+    info.record.bytesDone = done;
+    return info;
+}
+
+}  // namespace
+
+TEST_CASE("the download button follows the compatibility rules and the system check") {
+    test::UiHarness h;
+    const providers::ModRef ref{"akeno-catalogue", "example-blade/crimson-outfit"};
+    ModDetailScreen detail(ref, "Example Blade", providers::GameContext{"PPSA90001", "01.011.000"});
+    detail.update(h.env);
+    h.state.modDetail.loading = false;
+    h.state.modDetail.details = details(true);
+    test::RecordingCanvas canvas;
+
+    h.state.systemCheck.report = reportWithDownloads(false);
+    detail.render(canvas, h.env);
+    CHECK(canvas.hasText("Downloading is not available"));
+    detail.handle(Action::Confirm, h.env);
+    CHECK(h.commands.downloadStarts.empty());
+
+    h.state.systemCheck.report = reportWithDownloads(true);
+    canvas.clear();
+    detail.render(canvas, h.env);
+    CHECK(canvas.hasText("Download"));
+    CHECK(canvas.hasText("Downloads are checked with SHA-256. Nothing is installed."));
+    detail.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.downloadStarts.size() == 1);
+    CHECK(h.commands.downloadStarts[0].ref == ref);
+    CHECK_FALSE(h.commands.downloadStarts[0].confirmed);
+
+    // Once it is in the list, the button shows its state.
+    h.state.downloads.items = {downloadOf(*h.state.modDetail.details, downloads::DownloadState::Downloading, 450)};
+    canvas.clear();
+    detail.render(canvas, h.env);
+    CHECK(canvas.hasText("Downloading 45%"));
+    detail.handle(Action::Confirm, h.env);
+    CHECK(h.commands.downloadStarts.size() == 1);
+    CHECK(h.toasted("Already in the Downloads tab."));
+
+    h.state.downloads.items = {downloadOf(*h.state.modDetail.details, downloads::DownloadState::Completed, 1000)};
+    canvas.clear();
+    detail.render(canvas, h.env);
+    CHECK(canvas.hasText("Downloaded"));
+    CHECK(canvas.hasText("SHA-256 checked. Installing comes later."));
+
+    h.state.downloads.items = {downloadOf(*h.state.modDetail.details, downloads::DownloadState::Failed, 0)};
+    detail.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.resumed.size() == 1);
+
+    // PC-only mods are never downloaded for installing.
+    h.state.downloads.items.clear();
+    h.state.modDetail.details = details(false);
+    detail.handle(Action::Confirm, h.env);
+    CHECK(h.commands.downloadStarts.size() == 1);
+    CHECK(h.toasted("Akeno will not install this mod"));
+}
+
+TEST_CASE("experimental mods need a deliberate confirmation") {
+    test::UiHarness h;
+    h.state.systemCheck.report = reportWithDownloads(true);
+    const providers::ModRef ref{"akeno-catalogue", "example-blade/sharper-foliage"};
+    ModDetailScreen detail(ref, "Example Blade", providers::GameContext{"PPSA90001", "01.011.000"});
+    detail.update(h.env);
+    auto d = details(true);
+    d.summary.ref = ref;
+    d.summary.compatibility = CompatibilityStatus::Experimental;
+    d.needsConfirmation = true;
+    d.compatibilityReasons = {"Verified for game version 1.010; installed version is 1.011."};
+    h.state.modDetail.loading = false;
+    h.state.modDetail.details = d;
+
+    auto nav = detail.handle(Action::Confirm, h.env);
+    auto* confirm = dynamic_cast<ConfirmScreen*>(nav.screen.get());
+    REQUIRE(confirm != nullptr);
+    test::RecordingCanvas canvas;
+    confirm->render(canvas, h.env);
+    CHECK(canvas.hasText("Download an EXPERIMENTAL mod?"));
+    CHECK(canvas.hasText("Verified for game version 1.010; installed version is 1.011."));
+    CHECK(canvas.hasText("Download anyway"));
+    CHECK(h.commands.downloadStarts.empty());
+
+    // Cancel is focused first.
+    CHECK(confirm->handle(Action::Confirm, h.env).kind == NavRequest::Kind::Pop);
+    detail.update(h.env);
+    CHECK(h.commands.downloadStarts.empty());
+
+    nav = detail.handle(Action::Confirm, h.env);
+    confirm = dynamic_cast<ConfirmScreen*>(nav.screen.get());
+    REQUIRE(confirm != nullptr);
+    confirm->handle(Action::Up, h.env);
+    confirm->handle(Action::Confirm, h.env);
+    detail.update(h.env);
+    REQUIRE(h.commands.downloadStarts.size() == 1);
+    CHECK(h.commands.downloadStarts[0].confirmed);
+
+    // Closing the dialog any other way counts as cancel.
+    nav = detail.handle(Action::Confirm, h.env);
+    nav.screen.reset();
+    detail.update(h.env);
+    CHECK(h.commands.downloadStarts.size() == 1);
+}
+
+TEST_CASE("the Downloads tab shows progress and controls each download") {
+    test::UiHarness h;
+    h.state.systemCheck.report = reportWithDownloads(true);
+    auto d = details(true);
+    auto older = downloadOf(d, downloads::DownloadState::Completed, 1000, "aaaaaaaaaaaaaaaa");
+    auto newer = downloadOf(d, downloads::DownloadState::Downloading, 250, "bbbbbbbbbbbbbbbb");
+    newer.record.request.displayName = "Sharper Foliage Textures";
+    newer.progress.bytesPerSecond = 100;
+    newer.progress.secondsLeft = 7.5;
+    h.state.downloads.items = {older, newer};
+    h.state.downloads.freeBytes = 29'400'000'000ull;
+    h.state.downloads.reserveBytes = limits::kStorageSafetyReserveBytes;
+
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    test::RecordingCanvas canvas;
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("Free space 29.4 GB"));
+    CHECK(canvas.hasText("Sharper Foliage Textures  v1.2.0"));
+    CHECK(canvas.hasText("250 B of 1.0 KB   100 B/s   about 8 s left"));
+    CHECK(canvas.hasText("DOWNLOADING"));
+    CHECK(canvas.hasText("DOWNLOADED"));
+    CHECK(canvas.hasText("SHA-256 checked. Installing comes in a later version."));
+    // Newest first: the active one is focused.
+    host.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.paused.size() == 1);
+    CHECK(h.commands.paused[0] == "bbbbbbbbbbbbbbbb");
+
+    h.state.downloads.items[1].record.state = downloads::DownloadState::Paused;
+    host.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.resumed.size() == 1);
+
+    h.state.downloads.items[1].record.state = downloads::DownloadState::Failed;
+    h.state.downloads.items[1].record.error = "The server refused the download (HTTP 404).";
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("FAILED"));
+    CHECK(canvas.hasText("The server refused the download (HTTP 404)."));
+
+    // Remove asks first.
+    host.handle(Action::Tertiary, h.env);
+    REQUIRE(host.tabDepth(Tab::Downloads) == 2);
+    CHECK(dynamic_cast<ConfirmScreen*>(host.top()) != nullptr);
+    host.handle(Action::Up, h.env);      // "Remove"
+    host.handle(Action::Confirm, h.env);
+    CHECK(host.tabDepth(Tab::Downloads) == 1);
+    canvas.clear();
+    host.render(canvas, h.env);          // update() picks up the answer
+    REQUIRE(h.commands.removed.size() == 1);
+    CHECK(h.commands.removed[0] == "bbbbbbbbbbbbbbbb");
+    CHECK(h.state.downloads.items.size() == 1);
+}
+
+TEST_CASE("an empty Downloads tab explains itself, and notices become toasts") {
+    test::UiHarness h;
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    h.state.notices = {{1, "Added to Downloads: Crimson Outfit Recolour", ToastKind::Success}};
+    test::RecordingCanvas canvas;
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("Nothing downloaded yet"));
+    REQUIRE(host.toasts().size() == 1);
+    CHECK(host.toasts().front().text == "Added to Downloads: Crimson Outfit Recolour");
+    host.render(canvas, h.env);
+    CHECK(host.toasts().size() == 1);  // each notice once
 }
 
 TEST_CASE("long mod descriptions scroll with L2/R2") {

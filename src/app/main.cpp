@@ -47,6 +47,14 @@ int main(int argc, char* argv[]) {
         case app::RunMode::ListGames:
             exitCode = app::runListGames(*context.value());
             break;
+        case app::RunMode::DownloadTest: {
+            app::DownloadTestSpec spec = app::builtinDownloadTest();
+            if (commandLine.downloadTestUrl) {
+                spec = {*commandLine.downloadTestUrl, *commandLine.downloadTestSha256, *commandLine.downloadTestSize};
+            }
+            exitCode = app::runDownloadTest(*context.value(), spec);
+            break;
+        }
         case app::RunMode::Interactive:
             exitCode = ui::runSdlApplication(*context.value(), commandLine);
             break;

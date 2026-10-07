@@ -26,8 +26,11 @@ sha256sum -c SHA256SUMS
 ## First hardware test (headless)
 
 `AkenoSelfCheck.elf` has no user interface and never touches video output.
-It only reads system state, ShadowMountPlus's version and game list, and
-writes reports.
+It reads system state, ShadowMountPlus's version and game list, and writes
+reports. When the network check passes, it also downloads a 276-byte
+harmless test file (`assets/test/download-test.zip` from this repository's
+`main` branch) through the download engine, checks its SHA-256 and deletes
+it again.
 
 1. Start your homebrew environment and ShadowMountPlus.
 2. Send `AkenoSelfCheck.elf` to your payload loader, for example:
@@ -38,10 +41,13 @@ writes reports.
 4. Retrieve these files (FTP, or websrv's `/fs/` browser):
    * `/data/akeno-mod-manager/logs/system-check-<time>.txt`
    * `/data/akeno-mod-manager/logs/games-<time>.txt`
+   * `/data/akeno-mod-manager/logs/download-test-<time>.txt`
    * `/data/akeno-mod-manager/logs/akeno.log`
 
-This covers steps 1–4 of the testing ladder in
+This covers steps 1–6 of the testing ladder in
 [safety-model.md](safety-model.md#9-testing-ladder-on-real-hardware).
+The test file is published with the `main` branch; a build made before it
+was merged reports *HTTP 404* for that step.
 
 ## Installing the user interface
 
@@ -65,12 +71,17 @@ To exit, choose **Settings → Exit Akeno Mod Manager**.
 
 ```
 /data/akeno-mod-manager/
-  database/akeno.sqlite    settings and game history
+  database/akeno.sqlite    settings, game history, download list
   cache/icons/             game icons copied from ShadowMountPlus
+  cache/images/            mod thumbnails and screenshots
+  downloads/               <id>.partial while downloading, <id>.zip once checked
   logs/                    akeno.log, reports, diagnostic exports
   backups/                 database backups made before upgrades
-  downloads/ staging/ mods/ overlays/ profiles/   (empty until later phases)
+  staging/ mods/ overlays/ profiles/   (empty until later phases)
 ```
+
+Downloaded files are named by Akeno (16 hexadecimal digits), never by the
+server. Removing a download in the Downloads tab deletes its file.
 
 ## Uninstalling
 

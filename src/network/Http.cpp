@@ -24,6 +24,19 @@ std::string HttpResponse::header(std::string_view name) const {
     return {};
 }
 
+Result<HttpResponse> IHttpClient::stream(const HttpRequest& request, IBodySink& sink, const CancellationToken* cancel) {
+    auto response = send(request, cancel);
+    if (!response) {
+        return response;
+    }
+    AKENO_TRY(sink.begin(response->status, response->headers));
+    if (!response->body.empty()) {
+        AKENO_TRY(sink.write(response->body));
+    }
+    response->body.clear();
+    return response;
+}
+
 Status checkRequestPolicy(const HttpRequest& request) {
     auto url = parseUrl(request.url);
     if (!url) {

@@ -25,6 +25,67 @@ namespace {
 constexpr std::size_t kMaxCachedImages = 600;
 constexpr std::uint64_t kMaxImageCacheBytes = 160ull * 1024 * 1024;
 
+std::string_view statusLabel(providers::CompatibilityStatus status) {
+    switch (status) {
+        case providers::CompatibilityStatus::Verified: return "VERIFIED";
+        case providers::CompatibilityStatus::Likely: return "LIKELY";
+        case providers::CompatibilityStatus::Experimental: return "EXPERIMENTAL";
+        case providers::CompatibilityStatus::Unknown: return "UNKNOWN";
+        case providers::CompatibilityStatus::PcOnly: return "PC ONLY";
+        case providers::CompatibilityStatus::Incompatible: return "INCOMPATIBLE";
+    }
+    return "UNKNOWN";
+}
+
+// Turns a mod into a download request. The compatibility rules are applied here, whatever the
+// screen offered: mods that may not be installed on PS5 are never downloaded for installing.
+Result<downloads::DownloadRequest> buildDownloadRequest(providers::IModProvider& provider, const providers::ModRef& ref,
+                                                        const std::optional<providers::GameContext>& game,
+                                                        bool confirmed) {
+    auto details = provider.getModDetails(ref, game, nullptr);
+    if (!details) {
+        return std::move(details).error();
+    }
+    if (!details->installable) {
+        const std::string reason =
+            details->compatibilityReasons.empty() ? std::string(statusLabel(details->summary.compatibility))
+                                                  : details->compatibilityReasons.front();
+        return makeError(ErrorCode::SafetyViolation, "Akeno will not download this mod: " + reason);
+    }
+    if (details->needsConfirmation && !confirmed) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "This mod is EXPERIMENTAL for your game version. Confirm the download first.");
+    }
+    if (details->files.empty()) {
+        return makeError(ErrorCode::NotFound, "The catalogue lists no file for this mod.");
+    }
+    const providers::ModFile* file = &details->files.front();
+    for (const auto& candidate : details->files) {
+        if (candidate.primary) file = &candidate;
+    }
+    auto ticket = provider.resolveDownload(ref, *file, nullptr);
+    if (!ticket) {
+        return std::move(ticket).error();
+    }
+    if (!ticket->headers.empty()) {
+        return makeError(ErrorCode::Unsupported, "Downloads that need extra request headers are not supported yet.");
+    }
+    downloads::DownloadRequest request;
+    request.mod = ref;
+    request.displayName = details->summary.name;
+    request.modVersion = details->summary.version;
+    if (game) {
+        request.gameTitleId = game->titleId;
+        request.gameVersion = game->version;
+    }
+    request.compatibility = std::string(statusLabel(details->summary.compatibility));
+    request.url = ticket->url;
+    request.expectedSize = ticket->expectedSize;
+    request.expectedSha256 = ticket->expectedSha256;
+    request.format = mods::parseArchiveFormat(ticket->format);
+    return request;
+}
+
 bool sameGame(const std::optional<providers::GameContext>& a, const std::optional<providers::GameContext>& b) {
     if (a.has_value() != b.has_value()) return false;
     return !a || (a->titleId == b->titleId && a->version == b->version);
@@ -57,9 +118,33 @@ AppController::AppController(app::AppContext& context, TaskRunner& tasks, MainTh
     resetCatalogView();
 }
 
+AppController::~AppController() {
+    alive_->store(false);
+    context_.downloads().setListener(nullptr);
+    context_.downloads().stop();
+}
+
 void AppController::start() {
     runSystemCheck();
     tasks_.submit([this] { pruneImageCache(); });
+
+    // The worker reports changes on its own thread; refreshes are coalesced and run here.
+    MainThreadQueue* queue = &mainQueue_;
+    auto pending = downloadsRefreshPending_;
+    auto alive = alive_;
+    context_.downloads().setListener([this, queue, pending, alive] {
+        if (pending->exchange(true)) return;
+        queue->post([this, pending, alive] {
+            pending->store(false);
+            if (alive->load()) refreshDownloads();
+        });
+    });
+    auto started = context_.downloads().start();
+    if (!started) {
+        logger().error("downloads", started.error().describe());
+        addNotice("Downloads are unavailable: " + started.error().message, ToastKind::Error);
+    }
+    refreshDownloads();
 }
 
 void AppController::runSystemCheck() {
@@ -426,6 +511,98 @@ void AppController::loadModDetails(const providers::ModRef& ref, const std::opti
             current.details = std::move(details).value();
         });
     });
+}
+
+// ---------------------------------------------------------------- downloads
+
+void AppController::addNotice(std::string text, ToastKind kind) {
+    state_.notices.push_back(Notice{++noticeSerial_, std::move(text), kind});
+    if (state_.notices.size() > 8) state_.notices.erase(state_.notices.begin());
+}
+
+void AppController::refreshDownloads() {
+    downloads::DownloadManager& manager = context_.downloads();
+    std::vector<downloads::DownloadInfo> items = manager.snapshot();
+    // Announce downloads that finished since the last refresh.
+    for (const auto& item : items) {
+        const downloads::DownloadInfo* before = state_.downloads.find(item.record.id);
+        if (before == nullptr || before->record.state == item.record.state) continue;
+        if (item.record.state == downloads::DownloadState::Completed) {
+            addNotice("Downloaded and checked: " + item.record.request.displayName, ToastKind::Success);
+        } else if (item.record.state == downloads::DownloadState::Failed) {
+            addNotice("Download failed: " + item.record.request.displayName, ToastKind::Error);
+        }
+    }
+    state_.downloads.started = manager.started();
+    state_.downloads.items = std::move(items);
+    state_.downloads.reserveBytes = limits::kStorageSafetyReserveBytes;
+    auto space = security::queryStorageSpace(manager.directory());
+    if (space) {
+        state_.downloads.freeBytes = space->availableBytes;
+    } else {
+        state_.downloads.freeBytes.reset();
+    }
+}
+
+void AppController::startDownload(const providers::ModRef& ref, const std::optional<providers::GameContext>& game,
+                                  bool confirmed) {
+    const auto& report = state_.systemCheck.report;
+    if (report && report->features.downloading.state != app::FeatureState::Available) {
+        addNotice("Downloading is not available: " + report->features.downloading.reason, ToastKind::Error);
+        return;
+    }
+    auto provider = context_.catalogue();
+    if (!provider) {
+        addNotice("The mod catalogue address is not valid.", ToastKind::Error);
+        return;
+    }
+    downloads::DownloadManager* manager = &context_.downloads();
+    auto alive = alive_;
+    tasks_.submit([this, provider, manager, ref, game, confirmed, alive] {
+        std::string text;
+        ToastKind kind = ToastKind::Info;
+        auto request = buildDownloadRequest(*provider, ref, game, confirmed);
+        if (!request) {
+            text = request.error().message;
+            kind = ToastKind::Error;
+            logger().warn("downloads", "download refused for " + ref.modId + ": " + request.error().describe());
+        } else {
+            const std::string name = request->displayName;
+            auto queued = manager->enqueue(std::move(request).value());
+            if (!queued) {
+                text = "Could not add the download: " + queued.error().message;
+                kind = ToastKind::Error;
+            } else if (queued->alreadyPresent) {
+                text = "Already in Downloads: " + name;
+            } else {
+                text = "Added to Downloads: " + name;
+                kind = ToastKind::Success;
+            }
+        }
+        mainQueue_.post([this, alive, text = std::move(text), kind]() mutable {
+            if (!alive->load()) return;
+            addNotice(std::move(text), kind);
+            refreshDownloads();
+        });
+    });
+}
+
+Status AppController::pauseDownload(const std::string& id) {
+    auto paused = context_.downloads().pause(id);
+    refreshDownloads();
+    return paused;
+}
+
+Status AppController::resumeDownload(const std::string& id) {
+    auto resumed = context_.downloads().resume(id);
+    refreshDownloads();
+    return resumed;
+}
+
+Status AppController::removeDownload(const std::string& id) {
+    auto removed = context_.downloads().remove(id);
+    refreshDownloads();
+    return removed;
 }
 
 // ---------------------------------------------------------------- text entry

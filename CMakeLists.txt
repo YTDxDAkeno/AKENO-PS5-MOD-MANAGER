@@ -105,6 +105,9 @@ add_library(akeno_core STATIC
     src/mods/Catalog.cpp
     src/compatibility/CompatibilityRules.cpp
     src/providers/AkenoCatalogProvider.cpp
+    src/downloads/DownloadTypes.cpp
+    src/downloads/DownloadStore.cpp
+    src/downloads/DownloadManager.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp
@@ -119,6 +122,14 @@ else()
     target_sources(akeno_core PRIVATE src/platform/PlatformHost.cpp src/core/EmbeddedCaHost.cpp)
 endif()
 target_include_directories(akeno_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
+# The harmless file of `--download-test` (tools/make_download_test.py): its size and SHA-256 are
+# compiled in, so the test checks exactly the file in this repository.
+set(AKENO_DOWNLOAD_TEST_FILE "${CMAKE_SOURCE_DIR}/assets/test/download-test.zip")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${AKENO_DOWNLOAD_TEST_FILE}")
+file(SHA256 "${AKENO_DOWNLOAD_TEST_FILE}" AKENO_DOWNLOAD_TEST_SHA256)
+file(SIZE "${AKENO_DOWNLOAD_TEST_FILE}" AKENO_DOWNLOAD_TEST_SIZE)
+set_source_files_properties(src/app/Headless.cpp PROPERTIES COMPILE_DEFINITIONS
+    "AKENO_DOWNLOAD_TEST_SHA256=\"${AKENO_DOWNLOAD_TEST_SHA256}\";AKENO_DOWNLOAD_TEST_SIZE=${AKENO_DOWNLOAD_TEST_SIZE}")
 target_link_libraries(akeno_core
     PUBLIC akeno_third_party
     PRIVATE akeno_warnings PkgConfig::CURL PkgConfig::CRYPTO akeno_sqlite3)

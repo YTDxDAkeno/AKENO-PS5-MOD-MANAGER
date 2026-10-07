@@ -3,6 +3,7 @@
 // the UI thread; background work posts its results through MainThreadQueue.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -33,11 +34,16 @@ public:
 class AppController final : public IAppCommands {
 public:
     AppController(app::AppContext& context, TaskRunner& tasks, MainThreadQueue& mainQueue, IImageLoader* images);
+    // Stops the download engine (an active transfer continues at the next start).
+    ~AppController() override;
+    AppController(const AppController&) = delete;
+    AppController& operator=(const AppController&) = delete;
 
     const AppViewState& state() const { return state_; }
     bool quitRequested() const { return quit_; }
 
-    // Starts the system check; the library refresh follows automatically when it is possible.
+    // Starts the system check (the library refresh follows when it is possible) and the
+    // download engine.
     void start();
 
     void runSystemCheck() override;
@@ -55,6 +61,12 @@ public:
     void loadModList(const providers::SearchQuery& query) override;
     void loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>& game) override;
 
+    void startDownload(const providers::ModRef& ref, const std::optional<providers::GameContext>& game,
+                       bool confirmed) override;
+    Status pauseDownload(const std::string& id) override;
+    Status resumeDownload(const std::string& id) override;
+    Status removeDownload(const std::string& id) override;
+
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override;
     // Text entry events from the input backend (UI thread).
@@ -69,6 +81,8 @@ private:
     void applyFilter();
     void resetCatalogView();
     void pruneImageCache();
+    void refreshDownloads();
+    void addNotice(std::string text, ToastKind kind);
     Result<std::string> fetchIcon(const games::GameInfo& game);
     Result<std::string> fetchRemoteImage(const std::string& url);
 
@@ -83,6 +97,9 @@ private:
     CancellationToken detailCancel_;
     std::unordered_map<std::string, std::string> urlKeys_;  // url -> sha256, memoised for drawing
     std::function<void(std::optional<std::string>)> textInputDone_;
+    std::uint64_t noticeSerial_ = 0;
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
+    std::shared_ptr<std::atomic<bool>> downloadsRefreshPending_ = std::make_shared<std::atomic<bool>>(false);
     bool quit_ = false;
 };
 

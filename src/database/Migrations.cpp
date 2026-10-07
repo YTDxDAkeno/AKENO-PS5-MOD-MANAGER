@@ -42,8 +42,36 @@ CREATE TABLE games (
 );
 )sql";
 
-constexpr std::array<Migration, 1> kMigrations{{
+// Migration 2 — Phase 3 (download engine). One row per download; the file names in
+// downloads/ are derived from `id` only.
+constexpr const char* kMigration2 = R"sql(
+CREATE TABLE downloads (
+    id               TEXT PRIMARY KEY,
+    provider_id      TEXT NOT NULL,
+    mod_id           TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    mod_version      TEXT NOT NULL DEFAULT '',
+    game_title_id    TEXT NOT NULL DEFAULT '',
+    game_version     TEXT NOT NULL DEFAULT '',
+    compatibility    TEXT NOT NULL DEFAULT '',
+    url              TEXT NOT NULL,
+    expected_size    INTEGER NOT NULL,
+    expected_sha256  TEXT NOT NULL,
+    format           TEXT NOT NULL,
+    state            TEXT NOT NULL,
+    bytes_done       INTEGER NOT NULL DEFAULT 0,
+    attempts         INTEGER NOT NULL DEFAULT 0,
+    error            TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    completed_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX downloads_by_mod ON downloads(provider_id, mod_id, mod_version);
+)sql";
+
+constexpr std::array<Migration, 2> kMigrations{{
     {1, "phase1: settings and game snapshot", kMigration1},
+    {2, "phase3: downloads", kMigration2},
 }};
 
 }  // namespace

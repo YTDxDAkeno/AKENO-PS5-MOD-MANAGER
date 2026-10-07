@@ -64,6 +64,21 @@ Networking is not needed for the game library.
 The published catalogue has no entries until mods have been tested on PS5
 hardware. This is expected in 0.1.0-alpha.
 
+## A download failed
+
+The Downloads tab shows the reason. ✕ tries again (resuming where possible),
+□ removes the download and its file.
+
+* *Not enough free space*: Akeno always keeps 2 GB free on the data drive.
+* *does not match its SHA-256 checksum*: the file was deleted. If it happens
+  again, the catalogue entry is wrong; please report it.
+* *The file on the server … size*: the file was replaced on the server and
+  the catalogue entry needs an update.
+* *HTTP 404 / 403*: the file is no longer available at that address.
+* Connection problems are retried automatically three times.
+
+Interrupted downloads continue the next time Akeno starts.
+
 ## The search keyboard does not open (PS5)
 
 Akeno opens the console's keyboard dialog. If it does not appear within a few

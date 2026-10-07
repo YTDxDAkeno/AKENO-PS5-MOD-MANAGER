@@ -25,6 +25,7 @@ upgraded without evidence.
 | Akeno Catalogue provider, compatibility labels | ✓ host + PS5 | ✓ (fixtures) | ✓ (mock server, real HTTP client) | ✗ |
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
+| Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | ✗ |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | ✗ |
 

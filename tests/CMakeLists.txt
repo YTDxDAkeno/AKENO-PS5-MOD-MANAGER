@@ -23,6 +23,7 @@ add_executable(akeno_tests
     mods/test_catalog.cpp
     compatibility/test_compatibility_rules.cpp
     providers/test_catalog_provider.cpp
+    downloads/test_downloads.cpp
     app/test_system_check.cpp
     app/test_command_line.cpp
 )

@@ -102,7 +102,8 @@ TEST_CASE("full system check with a healthy (mocked) environment") {
     CHECK(report.find(CheckId::WritableStorage)->status != CheckStatus::Failed);
     CHECK(report.find(CheckId::Networking)->status == CheckStatus::Ok);
     CHECK(report.find(CheckId::Database)->status == CheckStatus::Ok);
-    CHECK(report.find(CheckId::Database)->summary == "OK (schema v1)");
+    CHECK(report.find(CheckId::Database)->summary ==
+          "OK (schema v" + std::to_string(akeno::database::latestSchemaVersion()) + ")");
     CHECK(report.find(CheckId::OverlayCapability)->status == CheckStatus::Warning);
     CHECK(report.find(CheckId::OverlayCapability)->detail.find("hard links in app storage: supported") !=
           std::string::npos);

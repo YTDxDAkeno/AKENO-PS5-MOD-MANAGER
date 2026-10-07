@@ -403,14 +403,7 @@ void setupScreens(ScreenHost& host, const AppViewState& state) {
     host.setTabRoot(Tab::Home, std::make_unique<HomeScreen>());
     host.setTabRoot(Tab::Games, std::make_unique<GameLibraryScreen>());
     host.setTabRoot(Tab::Discover, std::make_unique<DiscoverScreen>());
-    host.setTabRoot(Tab::Downloads,
-                    std::make_unique<PlannedFeatureScreen>(
-                        "Downloads", "Planned for Phase 3",
-                        std::vector<std::string>{
-                            "Mods will download directly on the PS5 over verified HTTPS, with pause, resume, retry "
-                            "and SHA-256 verification.",
-                            "Files stay in Akeno's downloads folder as .partial until they are complete and verified.",
-                            "Free space is checked first, and a safety reserve is always kept."}));
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
     host.setTabRoot(Tab::InstalledMods,
                     std::make_unique<PlannedFeatureScreen>(
                         "Installed Mods", "Planned for Phases 5 and 6",

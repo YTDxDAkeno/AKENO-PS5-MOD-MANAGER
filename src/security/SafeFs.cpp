@@ -109,6 +109,66 @@ Status SafeFs::writeFileAtomic(const fs::path& target, std::string_view contents
     return {};
 }
 
+WritableFile::~WritableFile() {
+    if (fd_ >= 0) ::close(fd_);
+}
+
+Status WritableFile::write(std::string_view data) {
+    if (fd_ < 0) {
+        return makeError(ErrorCode::Internal, "The file is already closed.", path_.string());
+    }
+    std::size_t written = 0;
+    while (written < data.size()) {
+        ssize_t n = ::write(fd_, data.data() + written, data.size() - written);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return ioError(errno == ENOSPC ? "The storage is full." : "Could not write a file.", path_, errno);
+        }
+        written += static_cast<std::size_t>(n);
+    }
+    size_ += data.size();
+    return {};
+}
+
+Status WritableFile::sync() {
+    if (fd_ >= 0 && ::fsync(fd_) != 0) {
+        return ioError("Could not flush a file to disk.", path_, errno);
+    }
+    return {};
+}
+
+Status WritableFile::close() {
+    if (fd_ < 0) return {};
+    Status synced = sync();
+    const int result = ::close(fd_);
+    const int err = errno;
+    fd_ = -1;
+    if (!synced) return synced;
+    if (result != 0) return ioError("Could not close a file.", path_, err);
+    return {};
+}
+
+Result<std::unique_ptr<WritableFile>> SafeFs::openForWriting(const fs::path& target, bool append) const {
+    auto checked = guard_.checkWritable(target);
+    if (!checked) {
+        return std::move(checked).error();
+    }
+    const fs::path& path = checked.value();
+    int flags = O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC;
+    flags |= append ? O_APPEND : O_TRUNC;
+    int fd = ::open(path.c_str(), flags, 0644);
+    if (fd < 0) {
+        return ioError("Could not open a file for writing.", path, errno);
+    }
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_nlink != 1) {
+        ::close(fd);
+        return makeError(ErrorCode::SafetyViolation, "Refused to write to something that is not a plain file.",
+                         path.string());
+    }
+    return std::unique_ptr<WritableFile>(new WritableFile(fd, path, static_cast<std::uint64_t>(info.st_size)));
+}
+
 Status SafeFs::removeFile(const fs::path& target) const {
     auto checked = guard_.checkWritable(target);
     if (!checked) {

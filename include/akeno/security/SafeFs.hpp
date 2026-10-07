@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -12,6 +13,27 @@
 #include "akeno/security/PathGuard.hpp"
 
 namespace akeno::security {
+
+// A file opened for writing through SafeFs (downloads). Closed on destruction.
+class WritableFile {
+public:
+    ~WritableFile();
+    WritableFile(const WritableFile&) = delete;
+    WritableFile& operator=(const WritableFile&) = delete;
+
+    Status write(std::string_view data);
+    Status sync();    // fsync
+    Status close();   // fsync and close; further writes fail
+    std::uint64_t size() const noexcept { return size_; }
+    const std::filesystem::path& path() const noexcept { return path_; }
+
+private:
+    friend class SafeFs;
+    WritableFile(int fd, std::filesystem::path path, std::uint64_t size) : fd_(fd), path_(std::move(path)), size_(size) {}
+    int fd_ = -1;
+    std::filesystem::path path_;
+    std::uint64_t size_ = 0;
+};
 
 class SafeFs {
 public:
@@ -26,6 +48,10 @@ public:
     Status writeFileAtomic(const std::filesystem::path& target, std::string_view contents) const;
 
     Status removeFile(const std::filesystem::path& target) const;
+
+    // Opens a regular file for writing without following symlinks. `append` keeps the existing
+    // content (resuming); otherwise the file is truncated. Creates the file if needed.
+    Result<std::unique_ptr<WritableFile>> openForWriting(const std::filesystem::path& target, bool append) const;
 
     // Removes a directory tree without following symlinks. Refuses to remove an allowed root.
     Status removeTree(const std::filesystem::path& target) const;

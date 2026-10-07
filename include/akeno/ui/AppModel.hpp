@@ -14,6 +14,7 @@
 #include "akeno/core/OperationJournal.hpp"
 #include "akeno/core/Result.hpp"
 #include "akeno/database/SettingsStore.hpp"
+#include "akeno/downloads/DownloadTypes.hpp"
 #include "akeno/games/GameInfo.hpp"
 #include "akeno/logging/Logger.hpp"
 #include "akeno/providers/IModProvider.hpp"
@@ -100,6 +101,36 @@ struct TextEntryView {
     std::string text;
 };
 
+struct DownloadsView {
+    bool started = false;
+    std::vector<downloads::DownloadInfo> items;  // oldest first
+    std::optional<std::uint64_t> freeBytes;      // in the downloads folder
+    std::uint64_t reserveBytes = 0;              // always kept free
+
+    const downloads::DownloadInfo* find(const std::string& id) const {
+        for (const auto& item : items) {
+            if (item.record.id == id) return &item;
+        }
+        return nullptr;
+    }
+    // The newest download of this mod version.
+    const downloads::DownloadInfo* findForMod(const providers::ModRef& mod, const std::string& version) const {
+        for (auto it = items.rbegin(); it != items.rend(); ++it) {
+            if (it->record.request.mod == mod && it->record.request.modVersion == version) return &*it;
+        }
+        return nullptr;
+    }
+};
+
+enum class ToastKind { Info, Success, Warning, Error };
+
+// Messages from background work, shown as toasts by the screen host.
+struct Notice {
+    std::uint64_t serial = 0;
+    std::string text;
+    ToastKind kind = ToastKind::Info;
+};
+
 struct AppViewState {
     SystemCheckView systemCheck;
     LibraryView library;
@@ -107,13 +138,13 @@ struct AppViewState {
     ModListView modList;
     ModDetailView modDetail;
     TextEntryView textEntry;
+    DownloadsView downloads;
+    std::vector<Notice> notices;               // the most recent ones; serials increase
     database::Settings settings;
     bool settingsPersistent = true;            // false when the database is unavailable
     std::optional<RecoveryView> recovery;
     AboutInfo about;
 };
-
-enum class ToastKind { Info, Success, Warning, Error };
 
 class IAppCommands {
 public:
@@ -138,6 +169,15 @@ public:
     virtual void loadCatalogGames(bool forceRefresh) = 0;
     virtual void loadModList(const providers::SearchQuery& query) = 0;
     virtual void loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>& game) = 0;
+
+    // Downloads (Phase 3). startDownload resolves the mod's file through its provider and queues
+    // it; the result is reported as a notice. Mods that the compatibility rules do not allow are
+    // refused; EXPERIMENTAL ones need `confirmed`.
+    virtual void startDownload(const providers::ModRef& ref, const std::optional<providers::GameContext>& game,
+                               bool confirmed) = 0;
+    virtual Status pauseDownload(const std::string& id) = 0;
+    virtual Status resumeDownload(const std::string& id) = 0;
+    virtual Status removeDownload(const std::string& id) = 0;
 
     // Asks the user for text; `done` receives the text, or nullopt when cancelled.
     virtual void requestTextInput(const std::string& prompt, const std::string& initial,
