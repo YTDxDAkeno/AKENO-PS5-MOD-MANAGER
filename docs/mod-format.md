@@ -59,6 +59,7 @@ Strings shown in the UI are cut to 512 bytes, descriptions to 16 KiB.
       "summary": "A recoloured outfit.",
       "categories": ["outfits"],
       "compatibility": "verified",
+      "gameVersions": ["01.010.000", "01.011.000"],
       "thumbnail": "https://example.org/thumb.png",
       "downloadSize": 123456789,
       "updatedAt": "2026-10-01T00:00:00Z"
@@ -66,6 +67,10 @@ Strings shown in the UI are cut to 512 bytes, descriptions to 16 KiB.
   ]
 }
 ```
+
+`gameVersions` in a summary entry is optional. It should repeat the
+manifest's `game.versions`. Without it, lists cannot show VERIFIED and show the
+claim as EXPERIMENTAL until the details are opened.
 
 ## `mods/<game-id>/<mod-id>.json` (manifest)
 

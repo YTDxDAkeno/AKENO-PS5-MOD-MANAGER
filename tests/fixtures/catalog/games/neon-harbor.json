@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "neon-harbor",
+  "name": "Neon Harbor",
+  "titleIds": [
+    "PPSA90002"
+  ],
+  "engine": "unknown",
+  "mods": [
+    {
+      "id": "neon-hud-tint",
+      "name": "Teal HUD Tint",
+      "author": "HudMaker",
+      "version": "1.0.0",
+      "summary": "Changes the HUD accent colour to teal.",
+      "categories": [
+        "ui"
+      ],
+      "compatibility": "likely",
+      "gameVersions": [
+        "01.004.000"
+      ],
+      "thumbnail": "http://127.0.0.1:10101/files/neon-harbor-neon-hud-tint-thumb.png",
+      "downloadSize": 204,
+      "updatedAt": "2026-09-01T10:00:00Z"
+    }
+  ]
+}

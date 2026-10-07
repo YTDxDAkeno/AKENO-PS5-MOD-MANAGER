@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "neon-hud-tint",
+  "name": "Teal HUD Tint",
+  "author": "HudMaker",
+  "version": "1.0.0",
+  "summary": "Changes the HUD accent colour to teal.",
+  "description": "Changes the HUD accent colour to teal. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "ui"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-09-01T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90002"
+    ],
+    "versions": [
+      "01.004.000"
+    ]
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "likely",
+    "engine": "unknown",
+    "modType": "asset-replacement",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/neon-harbor-neon-hud-tint-1.0.0.zip",
+    "size": 204,
+    "sha256": "f21f31f3d91ff565721f3cdb1441ba93da8483cb369ef0a4a72d5c97468039d1",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/neon-harbor-neon-hud-tint-thumb.png",
+    "screenshots": [
+      {
+        "url": "http://127.0.0.1:10101/files/neon-harbor-neon-hud-tint-shot1.png",
+        "caption": "Screenshot 1"
+      }
+    ]
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

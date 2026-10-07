@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "akeno-test-file",
+  "name": "Akeno Harmless Test Package",
+  "author": "Akeno",
+  "version": "1.0.0",
+  "summary": "Adds one text file to the game folder. Used to test the install pipeline safely.",
+  "description": "Adds one text file to the game folder. Used to test the install pipeline safely. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "test"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-10-05T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": [
+      "01.011.000"
+    ]
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "verified",
+    "engine": "unreal",
+    "modType": "test-harmless",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-akeno-test-file-1.0.0.zip",
+    "size": 244,
+    "sha256": "a4303e6c434911a4b6b8d4debed9ea64452d325c5a1870a0a5be5222f185578d",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-akeno-test-file-thumb.png",
+    "screenshots": []
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

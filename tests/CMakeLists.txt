@@ -11,6 +11,7 @@ add_executable(akeno_tests
     security/test_path_guard.cpp
     security/test_safe_fs.cpp
     security/test_image_probe.cpp
+    security/test_sha256.cpp
     platform/test_platform.cpp
     network/test_url.cpp
     network/test_http_policy.cpp
@@ -19,6 +20,9 @@ add_executable(akeno_tests
     database/test_settings.cpp
     games/test_games.cpp
     shadowmount/test_shadowmount.cpp
+    mods/test_catalog.cpp
+    compatibility/test_compatibility_rules.cpp
+    providers/test_catalog_provider.cpp
     app/test_system_check.cpp
     app/test_command_line.cpp
 )
@@ -33,6 +37,6 @@ endif()
 
 target_include_directories(akeno_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_compile_definitions(akeno_tests PRIVATE AKENO_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-target_link_libraries(akeno_tests PRIVATE akeno_core akeno_warnings akeno_sqlite3 PkgConfig::CURL)
+target_link_libraries(akeno_tests PRIVATE akeno_core akeno_warnings akeno_sqlite3 PkgConfig::CURL PkgConfig::CRYPTO)
 
 add_test(NAME akeno_tests COMMAND akeno_tests)

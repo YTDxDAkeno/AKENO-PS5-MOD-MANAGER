@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "sharper-foliage",
+  "name": "Sharper Foliage Textures",
+  "author": "TextureFan",
+  "version": "0.9.1",
+  "summary": "Higher resolution grass and tree textures.",
+  "description": "Higher resolution grass and tree textures. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "textures"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-08-01T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": [
+      "01.010.000"
+    ]
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "verified",
+    "engine": "unreal",
+    "modType": "asset-replacement",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-sharper-foliage-0.9.1.zip",
+    "size": 250,
+    "sha256": "699997cc40eccb20937bbdd73aa23ac097f886a9a61298278a394ea68a05414f",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-sharper-foliage-thumb.png",
+    "screenshots": [
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-sharper-foliage-shot1.png",
+        "caption": "Screenshot 1"
+      }
+    ]
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "id": "crimson-outfit",
+  "name": "Crimson Outfit Recolour",
+  "author": "DemoAuthor",
+  "version": "1.2.0",
+  "summary": "Recolours the default outfit in deep crimson.",
+  "description": "Recolours the default outfit in deep crimson. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "outfits"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-09-20T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": [
+      "01.011.000"
+    ]
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "verified",
+    "engine": "unreal",
+    "modType": "asset-replacement",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-crimson-outfit-1.2.0.zip",
+    "size": 745,
+    "sha256": "05504e0e61ab997a057e3abf323aeff5b17b7fad7d6daaf7a0942b22faef236f",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-crimson-outfit-thumb.png",
+    "screenshots": [
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-crimson-outfit-shot1.png",
+        "caption": "Screenshot 1"
+      },
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-crimson-outfit-shot2.png",
+        "caption": "Screenshot 2"
+      }
+    ]
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

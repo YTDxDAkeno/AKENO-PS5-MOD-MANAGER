@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "photo-mode-ue4ss",
+  "name": "Photo Mode Unlocker (UE4SS)",
+  "author": "PcModder",
+  "version": "1.0.0",
+  "summary": "PC script mod that needs UE4SS. Shown here to demonstrate the PC ONLY label.",
+  "description": "PC script mod that needs UE4SS. Shown here to demonstrate the PC ONLY label. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "utilities"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-07-15T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": []
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "pc-only",
+    "engine": "unreal",
+    "modType": "script",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-photo-mode-ue4ss-1.0.0.zip",
+    "size": 553,
+    "sha256": "f3416ffb6f84363d6ac74c3f16e1a43a8c81c2b29c8e73d58399fcf69a71c88b",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-photo-mode-ue4ss-thumb.png",
+    "screenshots": []
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

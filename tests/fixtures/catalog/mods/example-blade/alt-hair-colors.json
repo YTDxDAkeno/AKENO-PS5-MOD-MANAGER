@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "alt-hair-colors",
+  "name": "Alternative Hair Colours",
+  "author": "DemoAuthor",
+  "version": "2.0.0",
+  "summary": "Five hair colour options for the main character.",
+  "description": "Five hair colour options for the main character. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "characters"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-10-02T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": []
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "likely",
+    "engine": "unreal",
+    "modType": "asset-replacement",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-2.0.0.zip",
+    "size": 255,
+    "sha256": "efe4f56a6bacc189297cd7130e68bc2d0e4a9c0ef0b9fecde55e35c256d6445e",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-thumb.png",
+    "screenshots": [
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-shot1.png",
+        "caption": "Screenshot 1"
+      },
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-shot2.png",
+        "caption": "Screenshot 2"
+      },
+      {
+        "url": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-shot3.png",
+        "caption": "Screenshot 3"
+      }
+    ]
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}

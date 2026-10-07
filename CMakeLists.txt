@@ -57,6 +57,7 @@ endif()
 # ------------------------------------------------------------------------- dependencies
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
+pkg_check_modules(CRYPTO REQUIRED IMPORTED_TARGET libcrypto)
 
 if(AKENO_TARGET_PS5)
     # pacbrew installs SQLite without a pkg-config file.
@@ -89,6 +90,7 @@ add_library(akeno_core STATIC
     src/security/SafeName.cpp
     src/security/SafeFs.cpp
     src/security/ImageProbe.cpp
+    src/security/Sha256.cpp
     src/platform/PlatformCommon.cpp
     src/network/Url.cpp
     src/network/Http.cpp
@@ -100,6 +102,9 @@ add_library(akeno_core STATIC
     src/games/GameLibrary.cpp
     src/shadowmount/ShadowMountClient.cpp
     src/shadowmount/ShadowMountGameProvider.cpp
+    src/mods/Catalog.cpp
+    src/compatibility/CompatibilityRules.cpp
+    src/providers/AkenoCatalogProvider.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp
@@ -116,7 +121,7 @@ endif()
 target_include_directories(akeno_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_link_libraries(akeno_core
     PUBLIC akeno_third_party
-    PRIVATE akeno_warnings PkgConfig::CURL akeno_sqlite3)
+    PRIVATE akeno_warnings PkgConfig::CURL PkgConfig::CRYPTO akeno_sqlite3)
 find_package(Threads REQUIRED)
 target_link_libraries(akeno_core PUBLIC Threads::Threads)
 

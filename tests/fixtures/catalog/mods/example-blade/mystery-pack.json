@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "mystery-pack",
+  "name": "Mystery Asset Pack",
+  "author": "unknown",
+  "version": "0.1",
+  "summary": "No compatibility information is available for this pack.",
+  "description": "No compatibility information is available for this pack. This is fictional demo content for testing Akeno; the archive only contains placeholder text files.",
+  "categories": [
+    "misc"
+  ],
+  "license": "demo content, CC0",
+  "homepage": "https://github.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER",
+  "updatedAt": "2026-06-01T10:00:00Z",
+  "game": {
+    "titleIds": [
+      "PPSA90001"
+    ],
+    "versions": []
+  },
+  "platform": "ps5",
+  "compatibility": {
+    "status": "unknown",
+    "engine": "unreal",
+    "modType": "asset-addition",
+    "notes": "Demo entry."
+  },
+  "download": {
+    "url": "http://127.0.0.1:10101/files/example-blade-mystery-pack-0.1.zip",
+    "size": 457,
+    "sha256": "91e67ef2e0b4b55ee9fa3365a1e664510c6cf96908aee4d4d370afe9fba1d9d9",
+    "format": "zip"
+  },
+  "installation": {
+    "method": "shadowmount-overlay",
+    "archiveRoot": "",
+    "targetPrefix": ""
+  },
+  "media": {
+    "thumbnail": "http://127.0.0.1:10101/files/example-blade-mystery-pack-thumb.png",
+    "screenshots": []
+  },
+  "dependencies": {
+    "requires": [],
+    "recommends": [],
+    "conflictsWith": [],
+    "loadAfter": [],
+    "loadBefore": []
+  }
+}
