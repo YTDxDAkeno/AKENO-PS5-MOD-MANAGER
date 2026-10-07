@@ -60,6 +60,10 @@ CommandLine parseCommandLine(int argc, const char* const* argv) {
                     cl.errors.push_back("--shadowmount-port must be between 1 and 65535");
                 }
             }
+        } else if (arg == "--ui-script") {
+            if (auto value = needValue(arg)) {
+                cl.uiScript = std::string(*value);
+            }
         } else if (arg == "--window") {
             if (auto value = needValue(arg)) {
                 std::size_t x = value->find('x');
@@ -94,6 +98,8 @@ std::string usageText() {
            "  --window <WxH>           window size for desktop builds\n"
            "  --fullscreen             full-screen window for desktop builds\n"
            "  --verbose                include debug messages in the log\n"
+           "  --ui-script <steps>      developer option: scripted input, e.g.\n"
+           "                           \"wait:3,next-tab,shot:games,quit\" (screenshots go to logs/)\n"
            "  --version                print the version and exit\n"
            "  --help                   print this help and exit\n";
 }

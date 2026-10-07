@@ -1,0 +1,306 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "akeno/core/Strings.hpp"
+#include "akeno/ui/Screens.hpp"
+#include "akeno/ui/Theme.hpp"
+
+namespace akeno::ui {
+
+namespace {
+
+constexpr int kCardWidth = 320;
+constexpr int kCardHeight = 330;
+constexpr int kCardGapX = 40;
+constexpr int kCardGapY = 32;
+constexpr int kGridTop = 80;  // below the heading line
+
+const char* sortLabel(database::LibrarySort sort) {
+    switch (sort) {
+        case database::LibrarySort::Name: return "Name";
+        case database::LibrarySort::TitleId: return "Title ID";
+        case database::LibrarySort::RecentlyPlayed: return "Recently played";
+    }
+    return "Name";
+}
+
+database::LibrarySort nextSort(database::LibrarySort sort) {
+    switch (sort) {
+        case database::LibrarySort::Name: return database::LibrarySort::TitleId;
+        case database::LibrarySort::TitleId: return database::LibrarySort::RecentlyPlayed;
+        case database::LibrarySort::RecentlyPlayed: return database::LibrarySort::Name;
+    }
+    return database::LibrarySort::Name;
+}
+
+void drawGameArt(ICanvas& canvas, UiEnv& env, const games::GameInfo& game, const Rect& rect, int size) {
+    const std::string key = env.commands.gameIconKey(game, size);
+    if (key.empty() || !canvas.drawImage(key, rect)) {
+        draw::placeholderArt(canvas, rect, game.name);
+    }
+}
+
+void drawMessage(ICanvas& canvas, const Rect& content, std::string_view heading, std::string_view body,
+                 Color accent) {
+    const Rect box{content.x, content.y + kGridTop, content.w, 300};
+    draw::panel(canvas, box);
+    canvas.fillRoundedRect({box.x, box.y, 10, box.h}, 5, accent);
+    canvas.drawText(heading, {box.x + 50, box.y + 40, box.w - 100, 56},
+                    TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+    drawWrappedText(canvas, body, {box.x + 50, box.y + 120, box.w - 100, 160},
+                    TextStyle{FontRole::Body, theme::kTextSecondary, TextAlign::Left, false}, 46, 3);
+}
+
+const games::GameInfo* findGame(const AppViewState& state, const std::string& titleId) {
+    for (const auto& game : state.library.games) {
+        if (game.titleId == titleId) return &game;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------- GameLibraryScreen
+
+NavRequest GameLibraryScreen::handle(Action action, UiEnv& env) {
+    const auto& games = env.state.library.games;
+    grid_.setColumns(kColumns);
+    grid_.setVisibleRows(kVisibleRows);
+    grid_.setCount(static_cast<int>(games.size()));
+    if (grid_.handle(action)) {
+        return NavRequest::none();
+    }
+    switch (action) {
+        case Action::Confirm:
+            if (!games.empty()) {
+                return NavRequest::push(
+                    std::make_unique<GameDetailScreen>(games[static_cast<std::size_t>(grid_.focus())].titleId));
+            }
+            break;
+        case Action::Options: {
+            const auto& report = env.state.systemCheck.report;
+            if (report && report->features.gameLibrary.state != app::FeatureState::Available) {
+                // ShadowMountPlus was not usable: check again; the library refreshes on success.
+                env.commands.runSystemCheck();
+                env.showToast("Checking for ShadowMountPlus again...");
+            } else {
+                env.commands.refreshLibrary();
+                env.showToast("Refreshing the game list...");
+            }
+            break;
+        }
+        case Action::Secondary: {
+            database::Settings settings = env.state.settings;
+            settings.librarySort = nextSort(settings.librarySort);
+            auto saved = env.commands.saveSettings(settings);
+            env.showToast(saved ? strings::concat("Sorted by ", sortLabel(settings.librarySort))
+                                : "Could not save: " + saved.error().message,
+                          saved ? ToastKind::Info : ToastKind::Error);
+            break;
+        }
+        case Action::Tertiary: {
+            database::Settings settings = env.state.settings;
+            settings.showPs4Games = !settings.showPs4Games;
+            auto saved = env.commands.saveSettings(settings);
+            env.showToast(saved ? (settings.showPs4Games ? "PS4 games shown" : "PS4 games hidden")
+                                : "Could not save: " + saved.error().message,
+                          saved ? ToastKind::Info : ToastKind::Error);
+            break;
+        }
+        default:
+            break;
+    }
+    return NavRequest::none();
+}
+
+std::vector<ButtonHint> GameLibraryScreen::hints(const UiEnv& /*env*/) const {
+    return {{ButtonHint::Button::Square, "PS4 games"},
+            {ButtonHint::Button::Triangle, "Sort"},
+            {ButtonHint::Button::Options, "Refresh"},
+            {ButtonHint::Button::Cross, "Details"}};
+}
+
+void GameLibraryScreen::render(ICanvas& canvas, UiEnv& env) {
+    const Rect content = theme::kContent;
+    const auto& library = env.state.library;
+    const auto& games = library.games;
+    grid_.setColumns(kColumns);
+    grid_.setVisibleRows(kVisibleRows);
+    grid_.setCount(static_cast<int>(games.size()));
+
+    std::string heading = "Installed Games";
+    if (library.everLoaded) heading += strings::concat(" (", games.size(), ")");
+    canvas.drawText(heading, {content.x, content.y, 900, 60},
+                    TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+    std::string filters = strings::concat("Sort: ", sortLabel(env.state.settings.librarySort),
+                                          "   PS4 games: ", env.state.settings.showPs4Games ? "shown" : "hidden");
+    canvas.drawText(filters, {content.x + 900, content.y, content.w - 900, 60},
+                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Right, false});
+    if (library.loading) {
+        draw::spinner(canvas, content.x + 880, content.y + 30, env.time);
+    }
+
+    // The library depends on ShadowMountPlus; explain clearly when it is not available.
+    const auto& report = env.state.systemCheck.report;
+    if (report && report->features.gameLibrary.state != app::FeatureState::Available && games.empty()) {
+        std::string reason = report->features.gameLibrary.reason;
+        if (!reason.empty() && reason.back() != '.') reason += '.';
+        drawMessage(canvas, content, "The game library is not available",
+                    reason + " Start ShadowMountPlus (version 1.7 or newer), then press OPTIONS to try again.",
+                    theme::kError);
+        return;
+    }
+    if (!library.everLoaded) {
+        if (library.error) {
+            drawMessage(canvas, content, "Could not read your games", library.error->message, theme::kError);
+        } else {
+            draw::spinner(canvas, content.x + content.w / 2, content.y + 300, env.time);
+            canvas.drawText("Asking ShadowMountPlus for your games...", {content.x, content.y + 360, content.w, 50},
+                            TextStyle{FontRole::Body, theme::kTextSecondary, TextAlign::Center, false});
+        }
+        return;
+    }
+    if (library.error) {
+        canvas.drawText("Last refresh failed: " + library.error->message, {content.x, content.y + 44, content.w, 36},
+                        TextStyle{FontRole::Small, theme::kWarning, TextAlign::Left, false});
+    }
+    if (games.empty()) {
+        drawMessage(canvas, content, "No games found",
+                    library.totalGames > 0
+                        ? "All games are hidden by the current filters. Press SQUARE to show PS4 games, or enable "
+                          "homebrew titles in Settings."
+                        : "ShadowMountPlus did not report any installed games.",
+                    theme::kNeutral);
+        return;
+    }
+
+    const int firstIndex = grid_.firstVisibleRow() * kColumns;
+    const int lastIndex = std::min(static_cast<int>(games.size()), firstIndex + kColumns * kVisibleRows);
+    for (int index = firstIndex; index < lastIndex; ++index) {
+        const auto& game = games[static_cast<std::size_t>(index)];
+        const int slot = index - firstIndex;
+        const int col = slot % kColumns;
+        const int row = slot / kColumns;
+        const Rect card{content.x + col * (kCardWidth + kCardGapX), content.y + kGridTop + row * (kCardHeight + kCardGapY),
+                        kCardWidth, kCardHeight};
+        const bool focused = index == grid_.focus();
+        canvas.fillRoundedRect(card, 16, focused ? theme::kPanelRaised : theme::kPanel);
+        if (focused) draw::focusRing(canvas, card, 16);
+        const Rect art{card.x + (card.w - kIconSize) / 2, card.y + 14, kIconSize, kIconSize};
+        drawGameArt(canvas, env, game, art, kIconSize);
+        canvas.drawText(game.name, {card.x + 16, art.bottom() + 4, card.w - 32, 40},
+                        TextStyle{FontRole::Caption, theme::kTextPrimary, TextAlign::Center, true});
+        canvas.drawText(game.titleId, {card.x + 16, art.bottom() + 42, card.w - 32, 28},
+                        TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Center, false});
+        canvas.drawText("Version " + game.displayVersion(), {card.x + 16, art.bottom() + 68, card.w - 32, 28},
+                        TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Center, false});
+        canvas.drawText(strings::concat(game.installedMods, game.installedMods == 1 ? " installed mod" : " installed mods"),
+                        {card.x + 16, art.bottom() + 94, card.w - 32, 28},
+                        TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Center, false});
+        if (game.previousVersion) {
+            draw::badge(canvas, card.x + 12, card.y + 12, "UPDATED", theme::kWarning);
+        }
+    }
+    if (grid_.rowCount() > kVisibleRows) {
+        canvas.drawText(strings::concat("Row ", grid_.focus() / kColumns + 1, " of ", grid_.rowCount()),
+                        {content.x, content.bottom() - 34, content.w, 34},
+                        TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Right, false});
+    }
+}
+
+// ---------------------------------------------------------------- GameDetailScreen
+
+namespace {
+
+enum class DetailAction { BrowseMods, Launch, Back };
+constexpr std::array<DetailAction, 3> kDetailActions{DetailAction::BrowseMods, DetailAction::Launch,
+                                                      DetailAction::Back};
+
+}  // namespace
+
+NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
+    actions_.setCount(static_cast<int>(kDetailActions.size()));
+    actions_.setVisibleRows(static_cast<int>(kDetailActions.size()));
+    if (action == Action::Back) {
+        return NavRequest::pop();
+    }
+    if (actions_.handle(action)) {
+        return NavRequest::none();
+    }
+    if (action == Action::Confirm) {
+        switch (kDetailActions[static_cast<std::size_t>(actions_.focus())]) {
+            case DetailAction::BrowseMods:
+                env.showToast("Mod browsing arrives in Phase 2 (Akeno catalogue).", ToastKind::Warning);
+                break;
+            case DetailAction::Launch:
+                env.showToast("Launching games from Akeno is planned for a later release.", ToastKind::Warning);
+                break;
+            case DetailAction::Back:
+                return NavRequest::pop();
+        }
+    }
+    return NavRequest::none();
+}
+
+std::vector<ButtonHint> GameDetailScreen::hints(const UiEnv& /*env*/) const {
+    return {{ButtonHint::Button::Circle, "Back"}, {ButtonHint::Button::Cross, "Select"}};
+}
+
+void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
+    const Rect content = theme::kContent;
+    const games::GameInfo* game = findGame(env.state, titleId_);
+    if (game == nullptr) {
+        drawMessage(canvas, content, "Game not found",
+                    "ShadowMountPlus no longer reports " + titleId_ + ". It may have been removed or its drive "
+                    "disconnected. Press CIRCLE to go back.",
+                    theme::kNeutral);
+        return;
+    }
+    const Rect art{content.x, content.y, kIconSize, kIconSize};
+    drawGameArt(canvas, env, *game, art, kIconSize);
+
+    actions_.setCount(static_cast<int>(kDetailActions.size()));
+    const std::array<const char*, 3> labels{"Browse mods", "Launch game", "Back"};
+    int buttonY = art.bottom() + 30;
+    for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
+        const Rect row{content.x, buttonY + i * 84, kIconSize, 70};
+        const bool enabled = kDetailActions[static_cast<std::size_t>(i)] == DetailAction::Back;
+        draw::button(canvas, row, labels[static_cast<std::size_t>(i)], actions_.focus() == i, enabled);
+    }
+    canvas.drawText("Not available in this version", {content.x, buttonY + 3 * 84, kIconSize, 36},
+                    TextStyle{FontRole::Small, theme::kTextDisabled, TextAlign::Left, false});
+
+    const int infoX = content.x + kIconSize + 60;
+    const int infoW = content.right() - infoX;
+    canvas.drawText(game->name, {infoX, content.y, infoW, 70},
+                    TextStyle{FontRole::Title, theme::kTextPrimary, TextAlign::Left, true});
+
+    std::vector<std::pair<std::string, std::string>> rows{
+        {"Title ID", game->titleId},
+        {"Version", game->displayVersion() +
+                        (game->previousVersion ? "  (previously " + *game->previousVersion + ")" : std::string())},
+        {"Content ID", game->contentId.empty() ? "unknown" : game->contentId},
+        {"Platform", game->platform == games::Platform::Ps5   ? "PS5"
+                     : game->platform == games::Platform::Ps4 ? "PS4"
+                                                              : "unknown"},
+        {"Source", std::string(games::displayName(game->sourceType))},
+        {"Install path", game->installPath.empty() ? "-" : game->installPath},
+        {"Runtime path", game->runtimePath.empty() ? "-" : game->runtimePath},
+        {"Mounted now", game->mounted ? "yes" : "no"},
+        {"Installed mods", std::to_string(game->installedMods)},
+    };
+    if (game->sizeBytes) rows.insert(rows.begin() + 5, {"Size", strings::formatBytes(*game->sizeBytes)});
+    int y = content.y + 96;
+    for (const auto& [label, value] : rows) {
+        canvas.drawText(label, {infoX, y, 300, 44},
+                        TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false});
+        canvas.drawText(value, {infoX + 300, y, infoW - 300, 44},
+                        TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, false});
+        y += 54;
+    }
+    drawWrappedText(canvas,
+                    "Mods for this game cannot be browsed or installed in this version. Akeno will never modify "
+                    "the original game files; mods will be applied through ShadowMountPlus overlays.",
+                    {infoX, y + 16, infoW, 120},
+                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 38, 3);
+}
+
+}  // namespace akeno::ui

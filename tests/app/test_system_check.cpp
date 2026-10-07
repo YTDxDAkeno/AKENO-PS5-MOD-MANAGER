@@ -128,7 +128,8 @@ TEST_CASE("system check reports ShadowMount and database failures with reasons")
     SystemChecker checker(deps);
     SystemReport report = checker.run();
     CHECK(report.find(CheckId::ShadowMount)->status == CheckStatus::Failed);
-    CHECK(report.find(CheckId::ShadowMount)->summary.find("not answering") != std::string::npos);
+    CHECK(report.find(CheckId::ShadowMount)->summary == "not detected");
+    CHECK(report.find(CheckId::ShadowMountApi)->summary.find("not answering") != std::string::npos);
     CHECK(report.find(CheckId::ShadowMountApi)->status == CheckStatus::Failed);
     CHECK(report.find(CheckId::Database)->status == CheckStatus::Failed);
     CHECK(report.features.gameLibrary.state == FeatureState::Disabled);

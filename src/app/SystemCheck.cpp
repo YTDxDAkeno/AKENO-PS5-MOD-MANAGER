@@ -177,14 +177,14 @@ std::pair<CheckResult, CheckResult> SystemChecker::checkShadowMount() {
         std::string reason = deps_.gameProviderError ? deps_.gameProviderError->message : "not configured";
         std::string detail = deps_.gameProviderError ? deps_.gameProviderError->detail : "";
         return {make(CheckId::ShadowMount, "ShadowMount", CheckStatus::Failed, reason, detail),
-                make(CheckId::ShadowMountApi, "ShadowMount API", CheckStatus::Failed, "not connected")};
+                make(CheckId::ShadowMountApi, "ShadowMount API", CheckStatus::Failed, "not connected - " + reason)};
     }
     auto status = deps_.gameProvider->probe();
     if (!status) {
         const Error& error = status.error();
-        return {make(CheckId::ShadowMount, "ShadowMount", CheckStatus::Failed, "not detected - " + error.message,
-                     error.detail),
-                make(CheckId::ShadowMountApi, "ShadowMount API", CheckStatus::Failed, "not connected")};
+        return {make(CheckId::ShadowMount, "ShadowMount", CheckStatus::Failed, "not detected", error.detail),
+                make(CheckId::ShadowMountApi, "ShadowMount API", CheckStatus::Failed,
+                     "not connected - " + error.message, error.detail)};
     }
     CheckResult detected = make(CheckId::ShadowMount, "ShadowMount", CheckStatus::Ok,
                                 "detected (version " + status->providerVersion + ")");

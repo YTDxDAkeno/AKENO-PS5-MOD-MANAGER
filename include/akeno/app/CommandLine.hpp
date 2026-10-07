@@ -18,6 +18,7 @@ struct CommandLine {
     int windowHeight = 720;
     bool fullscreen = false;
     bool verbose = false;
+    std::string uiScript;     // developer option: scripted input and screenshots
     std::vector<std::string> errors;
 };
 

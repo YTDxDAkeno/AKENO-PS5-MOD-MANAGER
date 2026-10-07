@@ -88,6 +88,7 @@ add_library(akeno_core STATIC
     src/security/PathGuard.cpp
     src/security/SafeName.cpp
     src/security/SafeFs.cpp
+    src/security/ImageProbe.cpp
     src/platform/PlatformCommon.cpp
     src/network/Url.cpp
     src/network/Http.cpp
@@ -108,6 +109,7 @@ if(AKENO_TARGET_PS5)
     target_sources(akeno_core PRIVATE src/platform/PlatformPs5.cpp)
     akeno_embed_file(akeno_core "${PS5_PAYLOAD_SDK}/target/user/homebrew/etc/ca-bundle.crt" caBundlePem text)
     target_compile_definitions(akeno_core PUBLIC AKENO_TARGET_PS5=1)
+    target_link_libraries(akeno_core PUBLIC SceSystemService)
 else()
     target_sources(akeno_core PRIVATE src/platform/PlatformHost.cpp src/core/EmbeddedCaHost.cpp)
 endif()
