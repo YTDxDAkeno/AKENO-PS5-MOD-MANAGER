@@ -149,3 +149,18 @@ Result:
   the UI closed cleanly (exit code 0).
 * Not covered: downloads and mod checks from the UI, the search keyboard, notifications.
 Logs: akeno.log, diagnostic report (not published)
+
+### 2026-10-07 - repository owner - Akeno 0.2.0-alpha (865b7f30eb6b)
+Console: PS5, firmware 12.20
+Environment: as before (ShadowMountPlus 1.7beta4, websrv)
+Steps (docs/safety-model.md §9): `AkenoSelfCheck.elf`, **steps 1 to 10 all passed**; UI started
+Result:
+* System check: Overlay capability OK (copies into `/data/homebrew/backports/<TITLE_ID>`),
+  Safe Mode OFF, Installation AVAILABLE.
+* Ladder step 10 for the test title `TEST00000` only: the test mod was stored, the overlay was
+  built and moved into `/data/homebrew/backports/TEST00000` (file in place, SHA-256 matched),
+  Vanilla removed it, the stored copy was deleted. No real game was touched.
+* The UI (0.2.0-alpha) started, showed the library and ran the system check twice.
+* Not covered: step 11 (a real mod in a real game; needs a catalogue entry), whether
+  ShadowMountPlus loads an Akeno overlay into a running game.
+Logs: akeno.log, system-check, games, download-test, diagnostic (not published)

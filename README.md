@@ -201,7 +201,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
 | 3 | Download engine | implemented; one test download hardware tested (12.20) |
 | 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20) |
-| 5 | ShadowMountPlus overlay, Vanilla | implemented in 0.2.0-alpha (unit and mock tested, **not hardware tested**) |
+| 5 | ShadowMountPlus overlay, Vanilla | implemented in 0.2.0-alpha; overlay for a test title hardware tested (12.20), real mods not yet |
 | 6 | Load order, profiles, dependencies | planned |
 | 7 | Nexus Mods, mod.io | planned |
 | 8 | Advanced compatibility (Unreal) | planned |
