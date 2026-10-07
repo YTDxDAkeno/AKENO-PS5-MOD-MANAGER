@@ -93,6 +93,7 @@ struct SystemCheckDependencies {
     std::optional<Error> databaseError;
     std::string networkProbeUrl;
     BuildFeatures build;
+    std::filesystem::path backportsRoot{"/data/homebrew/backports"};  // ShadowMountPlus backports (Phase 5)
 };
 
 class SystemChecker {

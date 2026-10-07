@@ -281,10 +281,50 @@ Status SafeFs::copyFile(const fs::path& from, const fs::path& to) const {
     if (!checkedTo) {
         return std::move(checkedTo).error();
     }
-    std::error_code ec;
-    fs::copy_file(from, checkedTo.value(), fs::copy_options::overwrite_existing, ec);
-    if (ec) {
-        return ioError("Could not copy a file.", checkedTo.value(), ec);
+    // Plain read/write: std::filesystem helpers proved unreliable on the PS5 (see removeTree).
+    const int in = ::open(from.c_str(), O_RDONLY | O_NOFOLLOW);
+    if (in < 0) {
+        return ioError("Could not open a file to copy.", from, errno);
+    }
+    struct stat info {};
+    if (::fstat(in, &info) != 0 || !S_ISREG(info.st_mode)) {
+        ::close(in);
+        return makeError(ErrorCode::SafetyViolation, "Only plain files are copied.", from.string());
+    }
+    const int out = ::open(checkedTo.value().c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+    if (out < 0) {
+        int err = errno;
+        ::close(in);
+        return ioError("Could not create a copy.", checkedTo.value(), err);
+    }
+    std::vector<char> buffer(256 * 1024);
+    int err = 0;
+    for (;;) {
+        const ssize_t got = ::read(in, buffer.data(), buffer.size());
+        if (got == 0) break;
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            err = errno;
+            break;
+        }
+        std::size_t done = 0;
+        while (done < static_cast<std::size_t>(got)) {
+            const ssize_t put = ::write(out, buffer.data() + done, static_cast<std::size_t>(got) - done);
+            if (put < 0) {
+                if (errno == EINTR) continue;
+                err = errno;
+                break;
+            }
+            done += static_cast<std::size_t>(put);
+        }
+        if (err != 0) break;
+    }
+    if (err == 0 && ::fsync(out) != 0) err = errno;
+    ::close(in);
+    if (::close(out) != 0 && err == 0) err = errno;
+    if (err != 0) {
+        ::unlink(checkedTo.value().c_str());
+        return ioError("Could not copy a file.", checkedTo.value(), err);
     }
     return {};
 }

@@ -294,10 +294,12 @@ InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, cons
     plan.files = analysis.installCount;
     plan.bytes = analysis.installBytes;
     plan.changesGameFiles = false;
-    plan.executable = false;
-    plan.notExecutableReason = analysis.hasBlockers()
-                                   ? "The checks found problems that block installing."
-                                   : "Installing is not implemented in this version (Phase 5).";
+    plan.executable = analysis.installable;
+    if (analysis.hasBlockers()) {
+        plan.notExecutableReason = "The checks found problems that block installing.";
+    } else if (!analysis.installable) {
+        plan.notExecutableReason = "Its compatibility label does not allow installing.";
+    }
     for (const auto& file : analysis.files) {
         if (file.installPath.empty()) continue;
         if (plan.mapping.size() >= 200) break;

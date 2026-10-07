@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.21)
 
-project(AkenoPS5ModManager VERSION 0.1.0 LANGUAGES C CXX)
+project(AkenoPS5ModManager VERSION 0.2.0 LANGUAGES C CXX)
 
-set(AKENO_VERSION_STRING "0.1.0-alpha")
+set(AKENO_VERSION_STRING "0.2.0-alpha")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -113,6 +113,7 @@ add_library(akeno_core STATIC
     src/archives/SecureExtractor.cpp
     src/mods/ModAnalyzer.cpp
     src/mods/ModCheck.cpp
+    src/install/OverlayManager.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp

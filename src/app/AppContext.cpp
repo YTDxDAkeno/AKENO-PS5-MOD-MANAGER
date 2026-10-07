@@ -209,7 +209,8 @@ SystemChecker AppContext::makeSystemChecker() {
     deps.networkProbeUrl = settings_.networkProbeUrl;
     deps.build = BuildFeatures{};
     deps.build.modBrowsing = true;  // Phase 2
-    deps.build.downloading = true;  // Phase 3; installation is not implemented yet
+    deps.build.downloading = true;   // Phase 3
+    deps.build.installation = true;  // Phase 5
     return SystemChecker(std::move(deps));
 }
 

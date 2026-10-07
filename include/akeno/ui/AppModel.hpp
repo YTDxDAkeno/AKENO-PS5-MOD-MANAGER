@@ -133,6 +133,14 @@ struct ModCheckView {
     std::optional<mods::ModCheckReport> report;  // with conflicts and plan
 };
 
+// The mods Akeno keeps for one game (Phase 5).
+struct InstalledModsSummary {
+    std::size_t stored = 0;
+    std::size_t enabled = 0;
+    bool overlayActive = false;
+    std::optional<Error> error;  // the list could not be read
+};
+
 enum class ToastKind { Info, Success, Warning, Error };
 
 // Messages from background work, shown as toasts by the screen host.
@@ -195,6 +203,13 @@ public:
     // A stored result is shown unless `again` is set.
     virtual void checkDownload(const std::string& id, bool again) = 0;
     virtual void cancelCheck() = 0;
+
+    // Installing (Phase 5). installChecked keeps a checked download for its game and applies the
+    // game's overlay; setGameVanilla turns every mod of a game off. Results arrive as notices.
+    virtual void installChecked(const std::string& downloadId) = 0;
+    virtual void setGameVanilla(const std::string& titleId) = 0;
+    virtual InstalledModsSummary installedMods(const std::string& titleId) = 0;
+    virtual bool installBusy() const = 0;
 
     // Asks the user for text; `done` receives the text, or nullopt when cancelled.
     virtual void requestTextInput(const std::string& prompt, const std::string& initial,

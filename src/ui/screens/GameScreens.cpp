@@ -210,13 +210,17 @@ void GameLibraryScreen::render(ICanvas& canvas, UiEnv& env) {
 
 namespace {
 
-enum class DetailAction { BrowseMods, Launch, Back };
-constexpr std::array<DetailAction, 3> kDetailActions{DetailAction::BrowseMods, DetailAction::Launch,
+enum class DetailAction { BrowseMods, Vanilla, Back };
+constexpr std::array<DetailAction, 3> kDetailActions{DetailAction::BrowseMods, DetailAction::Vanilla,
                                                       DetailAction::Back};
 
 }  // namespace
 
 void GameDetailScreen::update(UiEnv& env) {
+    bool confirmed = false;
+    if (confirmVanilla_.take(confirmed) && confirmed) {
+        env.commands.setGameVanilla(titleId_);
+    }
     // The catalogue tells whether this game has mods; load it once in the background.
     const CatalogView& catalog = env.state.catalog;
     if (!catalogRequested_ && catalog.configured && !catalog.loaded && !catalog.loading) {
@@ -256,9 +260,20 @@ NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
                 }
                 break;
             }
-            case DetailAction::Launch:
-                env.showToast("Launching games from Akeno is planned for a later release.", ToastKind::Warning);
-                break;
+            case DetailAction::Vanilla: {
+                const InstalledModsSummary mods = env.commands.installedMods(titleId_);
+                if (!mods.overlayActive && mods.enabled == 0) {
+                    env.showToast("No mods are active for this game: it already runs unmodified.");
+                    break;
+                }
+                std::vector<std::string> lines{
+                    "Akeno removes its overlay for this game and turns every mod off. The game starts unmodified "
+                    "the next time.",
+                    "The mods stay stored and can be installed again from Downloads.",
+                };
+                return NavRequest::push(std::make_unique<ConfirmScreen>("Switch to Vanilla?", std::move(lines),
+                                                                        "Vanilla", confirmVanilla_.callback(), false));
+            }
             case DetailAction::Back:
                 return NavRequest::pop();
         }
@@ -288,15 +303,24 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     const providers::ProviderGame* entry = catalog.findByTitleId(titleId_);
     std::string browseLabel = "Browse mods";
     if (entry != nullptr) browseLabel = strings::concat("Browse mods (", entry->modCount, ")");
-    const std::array<std::string, 3> labels{browseLabel, "Launch game", "Back"};
+    const InstalledModsSummary mods = env.commands.installedMods(titleId_);
+    const bool modsActive = mods.overlayActive || mods.enabled > 0;
+    const std::array<std::string, 3> labels{browseLabel, modsActive ? "Vanilla (mods off)" : "Vanilla", "Back"};
     int buttonY = art.bottom() + 30;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         const Rect row{content.x, buttonY + i * 84, kIconSize, 70};
         const DetailAction kind = kDetailActions[static_cast<std::size_t>(i)];
-        const bool enabled = kind == DetailAction::Back || (kind == DetailAction::BrowseMods && entry != nullptr);
+        const bool enabled = kind == DetailAction::Back || (kind == DetailAction::BrowseMods && entry != nullptr) ||
+                             (kind == DetailAction::Vanilla && modsActive);
         draw::button(canvas, row, labels[static_cast<std::size_t>(i)], actions_.focus() == i, enabled);
     }
-    std::string note = "Launching is not available yet";
+    std::string note = strings::concat(mods.stored, " mods stored, none active");
+    if (mods.error) {
+        note = "The list of installed mods cannot be read";
+    } else if (modsActive) {
+        note = strings::concat(mods.enabled, " of ", mods.stored, " mods on",
+                               mods.overlayActive ? ", overlay active" : "");
+    }
     if (entry == nullptr) {
         if (catalog.loaded) {
             note = "No mods in the Akeno Catalogue yet";
@@ -326,7 +350,7 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
         {"Install path", game->installPath.empty() ? "-" : game->installPath},
         {"Runtime path", game->runtimePath.empty() ? "-" : game->runtimePath},
         {"Mounted now", game->mounted ? "yes" : "no"},
-        {"Installed mods", std::to_string(game->installedMods)},
+        {"Installed mods", strings::concat(mods.stored, " (", mods.enabled, " on)")},
     };
     if (game->sizeBytes) rows.insert(rows.begin() + 5, {"Size", strings::formatBytes(*game->sizeBytes)});
     int y = content.y + 96;

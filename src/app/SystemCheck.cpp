@@ -97,8 +97,7 @@ FeatureAvailability computeFeatures(const std::vector<CheckResult>& checks, cons
     if (!build.installation) {
         features.installation.state = FeatureState::NotImplemented;
         features.installation.reason =
-            "Overlay installation is not implemented in this build (planned for Phase 5). "
-            "No game data is modified.";
+            "Overlay installation is not part of this build. No game data is modified.";
     } else {
         for (CheckId required : {CheckId::ShadowMountApi, CheckId::WritableStorage, CheckId::Database,
                                  CheckId::OverlayCapability}) {
@@ -319,6 +318,28 @@ CheckResult SystemChecker::checkOverlayCapability(const CheckResult& shadowMount
     if (shadowMountApi.status != CheckStatus::Ok) {
         return make(CheckId::OverlayCapability, label, CheckStatus::Failed, "ShadowMountPlus is required", facts);
     }
+    // Activation renames a folder from Akeno's storage into the backports folder: both must be
+    // real folders on the same drive. The backports folder itself may still be missing.
+    const fs::path& backports = deps_.backportsRoot;
+    struct stat where {};
+    const bool exists = ::lstat(backports.c_str(), &where) == 0;
+    if (exists && !S_ISDIR(where.st_mode)) {
+        return make(CheckId::OverlayCapability, label, CheckStatus::Failed,
+                    "the ShadowMountPlus backports location is not a folder", facts + "; " + backports.string());
+    }
+    const fs::path probe = exists ? backports : backports.parent_path();
+    struct stat target {};
+    struct stat app {};
+    if (::lstat(probe.c_str(), &target) != 0 || !S_ISDIR(target.st_mode)) {
+        return make(CheckId::OverlayCapability, label, CheckStatus::Failed,
+                    "the ShadowMountPlus folder " + probe.string() + " was not found", facts);
+    }
+    if (::stat(deps_.paths.staging().c_str(), &app) != 0 || app.st_dev != target.st_dev) {
+        return make(CheckId::OverlayCapability, label, CheckStatus::Failed,
+                    "the backports folder is not on the same drive as Akeno's storage", facts + "; " + backports.string());
+    }
+    facts += "; overlays: " + std::string(hardLinks ? "hard links possible, copies used" : "copies") + " into " +
+             backports.string() + "/<TITLE_ID>";
     return make(CheckId::OverlayCapability, label, CheckStatus::Ok, "OK", facts);
 }
 

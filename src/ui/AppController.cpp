@@ -10,6 +10,7 @@
 #include "akeno/core/Strings.hpp"
 #include "akeno/database/Database.hpp"
 #include "akeno/games/GameLibrary.hpp"
+#include "akeno/install/OverlayManager.hpp"
 #include "akeno/mods/Catalog.hpp"
 #include "akeno/mods/ModCheck.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
@@ -652,6 +653,10 @@ Status AppController::removeDownload(const std::string& id) {
 
 void AppController::checkDownload(const std::string& id, bool again) {
     ModCheckView& view = state_.check;
+    if (installing_) {
+        addNotice("Wait until the mod change has finished.", ToastKind::Warning);
+        return;
+    }
     if (view.running) {
         if (view.downloadId != id) addNotice("Another mod is being checked. Wait for it to finish.", ToastKind::Warning);
         return;
@@ -744,6 +749,149 @@ void AppController::checkDownload(const std::string& id, bool again) {
 
 void AppController::cancelCheck() {
     if (state_.check.running) checkCancel_.cancel();
+}
+
+// ---------------------------------------------------------------- installing (Phase 5)
+
+namespace {
+
+std::string installUnavailableReason(const AppViewState& state) {
+    if (!state.systemCheck.report) return "Run the system check first.";
+    const auto& feature = state.systemCheck.report->features.installation;
+    if (feature.state == app::FeatureState::Available) return {};
+    return feature.reason.empty() ? "Installing is not available on this console right now." : feature.reason;
+}
+
+}  // namespace
+
+void AppController::installChecked(const std::string& id) {
+    if (installing_ || state_.check.running) {
+        addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
+        return;
+    }
+    if (std::string why = installUnavailableReason(state_); !why.empty()) {
+        addNotice("Installing is not available: " + why, ToastKind::Error);
+        return;
+    }
+    const downloads::DownloadInfo* item = state_.downloads.find(id);
+    auto file = context_.downloads().completedFile(id);
+    if (item == nullptr || !file) {
+        addNotice("This download no longer exists.", ToastKind::Error);
+        return;
+    }
+    const downloads::DownloadRequest& download = item->record.request;
+    const games::GameInfo* game = nullptr;
+    for (const auto& candidate : allGames_) {
+        if (candidate.titleId == download.gameTitleId) game = &candidate;
+    }
+    if (game == nullptr) {
+        addNotice("The game " + download.gameTitleId + " is not installed, so the mod cannot be installed.",
+                  ToastKind::Error);
+        return;
+    }
+    install::InstallRequest request;
+    request.downloadId = id;
+    request.archive = file.value();
+    request.format = download.format;
+    request.mod = download.mod;
+    request.name = download.displayName;
+    request.version = download.modVersion;
+    request.titleId = download.gameTitleId;
+    request.sourceType = game->sourceType;
+    request.archiveRoot = download.archiveRoot;
+    request.targetPrefix = download.targetPrefix;
+    request.catalogueStatus = statusFromLabel(download.compatibility);
+    request.catalogueInstallable = download.catalogueInstallable;
+    const install::TitleTarget target{game->titleId, game->mounted, game->installedPkg, game->installPath};
+    const bool interrupted = context_.interruptedOperation().has_value();
+
+    installing_ = true;
+    addNotice("Installing " + request.name + "...", ToastKind::Info);
+    auto alive = alive_;
+    tasks_.submit([this, request, target, interrupted, alive] {
+        install::InstallEnvironment env{context_.fs(),
+                                        context_.paths(),
+                                        context_.journal(),
+                                        interrupted,
+                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                        limits::kStorageSafetyReserveBytes,
+                                        {}};
+        std::string message;
+        ToastKind kind = ToastKind::Success;
+        auto stored = install::storeMod(request, env);
+        if (!stored && stored.error().code != ErrorCode::AlreadyExists) {
+            message = "Not installed: " + stored.error().message;
+            kind = ToastKind::Error;
+        } else if (auto applied = install::applyOverlay(target, env); !applied) {
+            message = "The mod is kept but not active: " + applied.error().message;
+            kind = ToastKind::Error;
+        } else {
+            message = strings::concat(request.name, " is installed. ", applied->mods,
+                                      " mod(s) are active the next time the game starts.");
+        }
+        mainQueue_.post([this, alive, message, kind] {
+            if (!alive->load()) return;
+            installing_ = false;
+            modSummaries_.clear();
+            addNotice(message, kind);
+        });
+    });
+}
+
+void AppController::setGameVanilla(const std::string& titleId) {
+    if (installing_ || state_.check.running) {
+        addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
+        return;
+    }
+    const games::GameInfo* game = nullptr;
+    for (const auto& candidate : allGames_) {
+        if (candidate.titleId == titleId) game = &candidate;
+    }
+    const install::TitleTarget target{titleId, game != nullptr && game->mounted, game != nullptr && game->installedPkg,
+                                      game != nullptr ? game->installPath : std::string()};
+    const bool interrupted = context_.interruptedOperation().has_value();
+    installing_ = true;
+    auto alive = alive_;
+    tasks_.submit([this, target, interrupted, alive] {
+        install::InstallEnvironment env{context_.fs(),
+                                        context_.paths(),
+                                        context_.journal(),
+                                        interrupted,
+                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                        limits::kStorageSafetyReserveBytes,
+                                        {}};
+        auto result = install::setVanilla(target, env);
+        std::string message = result ? "Vanilla: all mods are off. The game starts unmodified next time."
+                                     : "Could not switch to Vanilla: " + result.error().message;
+        const ToastKind kind = result ? ToastKind::Success : ToastKind::Error;
+        mainQueue_.post([this, alive, message, kind] {
+            if (!alive->load()) return;
+            installing_ = false;
+            modSummaries_.clear();
+            addNotice(message, kind);
+        });
+    });
+}
+
+InstalledModsSummary AppController::installedMods(const std::string& titleId) {
+    if (auto cached = modSummaries_.find(titleId); cached != modSummaries_.end()) return cached->second;
+    InstalledModsSummary& summary = modSummaries_[titleId];
+    install::InstallEnvironment env{context_.fs(),
+                                    context_.paths(),
+                                    context_.journal(),
+                                    false,
+                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                    limits::kStorageSafetyReserveBytes,
+                                    {}};
+    auto state = install::loadTitleState(env, titleId);
+    if (!state) {
+        summary.error = state.error();
+        return summary;
+    }
+    summary.stored = state->mods.size();
+    summary.enabled = state->enabledCount();
+    summary.overlayActive = state->overlayActive;
+    return summary;
 }
 
 // ---------------------------------------------------------------- text entry

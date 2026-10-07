@@ -28,6 +28,7 @@ add_executable(akeno_tests
     archives/test_secure_extractor.cpp
     mods/test_mod_analyzer.cpp
     mods/test_mod_check.cpp
+    install/test_overlay_manager.cpp
     app/test_system_check.cpp
     app/test_command_line.cpp
 )

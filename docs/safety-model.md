@@ -125,7 +125,7 @@ Do not skip steps. Record results in `docs/compatibility.md`.
 7. Extract into Akeno's own staging folder *(Phase 4)*.
 8. Delete staging *(Phase 4)*.
 9. Generate a dry-run overlay plan *(Phase 4)*.
-10. Create a harmless isolated overlay *(Phase 5)*.
+10. Create a harmless isolated overlay *(Phase 5; `AkenoSelfCheck.elf`, title `TEST00000`)*.
 11. Activate a single known-safe mod *(Phase 5)*.
 
 ## 10. Reporting test status honestly

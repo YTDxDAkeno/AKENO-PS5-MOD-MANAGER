@@ -16,9 +16,14 @@ and the user interface from the websrv Homebrew Launcher. Details and limits:
   plain POSIX calls for anything that deletes or moves files on the console.
 * The repository has no `main` branch: remote URLs use `HEAD`.
 
+## Phase 5 (0.2.0-alpha): implemented, not hardware tested
+
+Installing and Vanilla are in `src/install/OverlayManager.cpp`. Next hardware steps:
+ladder step 10 (`AkenoSelfCheck.elf`, test title only), then step 11 below.
+
 ## Not implemented
 
-* **Phase 5: installing mods.** Design: `docs/shadowmount.md` §4 (overlay built in
+* **Phase 5 design notes (kept for reference).** Design: `docs/shadowmount.md` §4 (overlay built in
   `overlays/<TITLE_ID>/overlay.next/`, copies, validation, journaled rename into
   `<scanpath>/backports/<TITLE_ID>/`, Vanilla by removing Akeno's backport).
   Existing pieces to build on: `InstallPlan` (`src/mods/ModAnalyzer.cpp`), the

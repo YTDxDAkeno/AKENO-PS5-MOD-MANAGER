@@ -85,8 +85,9 @@ RecoveryAdvice adviseRecovery(const OperationState& state) {
     advice.needsOverlayRestore = state.activeOverlayTouched;
     if (state.activeOverlayTouched) {
         advice.explanation =
-            "The active mod overlay may have been changed. The last known-good configuration "
-            "will be restored.";
+            "The game's mod overlay was being switched. Cleaning up deletes Akeno's temporary files. "
+            "If the overlay is missing afterwards, the game simply runs unmodified (Vanilla); install "
+            "the mod again from Downloads to turn it back on.";
     } else {
         advice.explanation = "No active overlay was changed.";
     }

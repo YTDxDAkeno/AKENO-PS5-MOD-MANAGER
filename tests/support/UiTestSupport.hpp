@@ -3,6 +3,7 @@
 // implementation that records what was requested.
 #pragma once
 
+#include <map>
 #include <algorithm>
 #include <functional>
 #include <optional>
@@ -151,6 +152,16 @@ public:
         state_.check.running = true;
     }
     void cancelCheck() override { ++checkCancels; }
+    void installChecked(const std::string& id) override { installs.push_back(id); }
+    void setGameVanilla(const std::string& titleId) override { vanillas.push_back(titleId); }
+    ui::InstalledModsSummary installedMods(const std::string& titleId) override {
+        auto it = installedSummaries.find(titleId);
+        return it == installedSummaries.end() ? ui::InstalledModsSummary{} : it->second;
+    }
+    bool installBusy() const override { return false; }
+    std::vector<std::string> installs;
+    std::vector<std::string> vanillas;
+    std::map<std::string, ui::InstalledModsSummary> installedSummaries;
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override {
         textPrompt = prompt;

@@ -130,6 +130,23 @@ TEST_CASE("game library shows games and opens details") {
     CHECK(canvas.hasText("Installed mods"));
     host.handle(Action::Confirm, h.env);  // "Browse mods": no catalogue in this harness
     CHECK(h.toasted("catalogue address is not valid"));
+    // Vanilla: nothing to do without active mods; with them, it asks first.
+    host.handle(Action::Down, h.env);
+    host.handle(Action::Confirm, h.env);
+    CHECK(h.toasted("No mods are active"));
+    h.commands.installedSummaries["PPSA05678"] = InstalledModsSummary{2, 1, true, std::nullopt};
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("Vanilla (mods off)"));
+    CHECK(canvas.hasText("2 (1 on)"));
+    host.handle(Action::Confirm, h.env);
+    REQUIRE(dynamic_cast<ConfirmScreen*>(host.top()) != nullptr);
+    host.handle(Action::Up, h.env);
+    host.handle(Action::Confirm, h.env);
+    host.render(canvas, h.env);
+    REQUIRE(h.commands.vanillas.size() == 1);
+    CHECK(h.commands.vanillas[0] == "PPSA05678");
+    host.handle(Action::Up, h.env);
     host.handle(Action::Back, h.env);
     CHECK(host.tabDepth(Tab::Games) == 1);
     host.handle(Action::Back, h.env);  // the tab root stays

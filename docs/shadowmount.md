@@ -81,7 +81,11 @@ over the game at launch:
   This is code injection, which the safety model forbids.
 * SMP `chmod`s everything under `backports/` to `0777` on UFS/BFS.
 
-### 4.1 Akeno's contract (Phase 5 design)
+### 4.1 Akeno's contract (Phase 5)
+
+Implemented in `src/install/OverlayManager.cpp` (0.2.0-alpha). Simplification of
+point 1: Akeno uses `/data/homebrew/backports/<TITLE_ID>` and refuses games outside
+`/data/homebrew` (installed packages excepted) instead of computing other scan paths.
 
 1. **Where.** Akeno targets the backport directory that SMP will actually
    use for the title. It computes it the same way SMP does: the owning scan
@@ -90,8 +94,8 @@ over the game at launch:
    *higher-priority* backport directory exists that Akeno does not own, the
    overlay would be ignored. Installation is blocked with an explanation.
 2. **Ownership.** Akeno only replaces a backport directory it created. It
-   records the directory's device and inode plus a content manifest in its
-   own database. **No marker files are placed inside the overlay.** They
+   records the directory's device and inode plus a content manifest in
+   `mods/<TITLE_ID>/state.json` (implemented in 0.2.0-alpha). **No marker files are placed inside the overlay.** They
    would be visible to the game and would count against the 256-redirect
    limit.
 3. **Existing user backports** (e.g. firmware backports with `fakelib`):
@@ -101,7 +105,8 @@ over the game at launch:
    unmodified as the lowest layer, and restore it exactly on "Vanilla" or
    on uninstall.
 4. **Building.** The merged tree is built in
-   `/data/akeno-mod-manager/overlays/<TITLE_ID>/overlay.next/`. Regular
+   `/data/akeno-mod-manager/staging/apply-<TITLE_ID>-<time>/next/` (0.2.0-alpha;
+   staging, so an interrupted build is cleaned up by the recovery prompt). Regular
    files only. Hard links from `mods/` when the filesystem supports them
    (detected at startup), copies otherwise. **On the first test console
    (firmware 12.20) hard links did not work in Akeno's folder**, so copies

@@ -68,6 +68,10 @@ public:
     Status removeDownload(const std::string& id) override;
     void checkDownload(const std::string& id, bool again) override;
     void cancelCheck() override;
+    void installChecked(const std::string& downloadId) override;
+    void setGameVanilla(const std::string& titleId) override;
+    InstalledModsSummary installedMods(const std::string& titleId) override;
+    bool installBusy() const override { return installing_; }
 
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override;
@@ -105,6 +109,8 @@ private:
     std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<bool>> downloadsRefreshPending_ = std::make_shared<std::atomic<bool>>(false);
     bool quit_ = false;
+    bool installing_ = false;  // one install or Vanilla at a time; never during a check
+    std::unordered_map<std::string, InstalledModsSummary> modSummaries_;  // read once, dropped after changes
 };
 
 }  // namespace akeno::ui

@@ -565,12 +565,21 @@ TEST_CASE("completed downloads open their check, which shows findings, conflicts
     CHECK(canvas.hasText("VERIFIED"));
     CHECK(canvas.hasText("1 file to install (4.0 KB) from 3 in the archive"));
     CHECK(canvas.hasText("Another Outfit: 1 file in common"));
-    CHECK(canvas.hasText("Install plan (dry run: nothing is changed)"));
+    CHECK(canvas.hasText("Install plan (CROSS installs; nothing changes before that)"));
     for (int i = 0; i < 2; ++i) host.handle(Action::PageDown, h.env);
     CHECK(screen->scroll() > 0);
     canvas.clear();
     host.render(canvas, h.env);
-    CHECK(canvas.hasText("Not carried out: Installing is not implemented in this version (Phase 5)."));
+    CHECK(canvas.hasText("Press CROSS to install. Nothing changes before you confirm."));
+    // CROSS asks first; confirming installs.
+    host.handle(Action::Confirm, h.env);
+    auto* confirm = dynamic_cast<ConfirmScreen*>(host.top());
+    REQUIRE(confirm != nullptr);
+    host.handle(Action::Up, h.env);
+    host.handle(Action::Confirm, h.env);
+    host.render(canvas, h.env);
+    REQUIRE(h.commands.installs.size() == 1);
+    CHECK(h.commands.installs[0] == "aaaaaaaaaaaaaaaa");
     CHECK(canvas.hasText("Content/Paks/~mods/crimson.pak"));
 
     host.handle(Action::Secondary, h.env);  // check again

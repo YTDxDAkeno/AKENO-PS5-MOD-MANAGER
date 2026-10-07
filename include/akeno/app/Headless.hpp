@@ -29,6 +29,7 @@ struct DownloadTestSpec {
     std::string sha256;
     std::uint64_t size = 0;
     std::optional<bool> hardLinks;  // from the system check; decides links or copies in the plan
+    bool overlayTest = false;       // ladder step 10: install, apply, Vanilla, remove for TEST00000
 };
 // The file in this repository (assets/test/download-test.zip), from its default branch.
 DownloadTestSpec builtinDownloadTest();

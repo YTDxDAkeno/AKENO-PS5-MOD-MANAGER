@@ -36,6 +36,8 @@ int main(int argc, char* argv[]) {
     if (network != nullptr && network->status == app::CheckStatus::Ok) {
         app::DownloadTestSpec spec = app::builtinDownloadTest();
         spec.hardLinks = report.hardLinksSupported;
+        // Ladder step 10 only where installing is possible (ShadowMountPlus and its folder found).
+        spec.overlayTest = !report.features.safeMode();
         (void)app::runDownloadTest(*context.value(), spec);
     }
     logging::logger().flush();

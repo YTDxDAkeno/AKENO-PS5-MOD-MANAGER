@@ -6,9 +6,13 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
+
 #include "akeno/core/Strings.hpp"
 #include "akeno/downloads/DownloadManager.hpp"
+#include "akeno/install/OverlayManager.hpp"
 #include "akeno/mods/ModCheck.hpp"
+#include "akeno/security/Sha256.hpp"
 
 namespace akeno::app {
 
@@ -120,7 +124,7 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
                                 file.size, " bytes, SHA-256 ", file.sha256.substr(0, 16), "...)\n");
     }
     if (report->plan) {
-        text += strings::concat("Plan:     ", report->plan->steps.size(), " steps, not carried out (dry run)\n");
+        text += strings::concat("Plan:     ", report->plan->steps.size(), " steps (described, not carried out here)\n");
         for (const auto& [from, to] : report->plan->mapping) text += "          " + from + " -> " + to + "\n";
         text += strings::concat("Overlay:  ", hardLinks == true    ? "hard links"
                                               : hardLinks == false ? "copies (hard links do not work here)"
@@ -131,13 +135,72 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
     return text;
 }
 
+// Ladder step 10: a harmless overlay for the test title TEST00000 (never a real game), made with
+// the real install code and removed again with Vanilla.
+std::string overlayTest(AppContext& context, const std::string& downloadId, const std::filesystem::path& archive,
+                        bool& passed) {
+    constexpr const char* kTitle = "TEST00000";
+    install::InstallEnvironment env{context.fs(),
+                                    context.paths(),
+                                    context.journal(),
+                                    context.interruptedOperation().has_value(),
+                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                    limits::kStorageSafetyReserveBytes,
+                                    {}};
+    const install::TitleTarget target{kTitle, false, false, {}};
+    std::string text = "Overlay test (ladder step 10, title TEST00000 only)\n";
+    auto failed = [&](const std::string& step, const std::string& why) {
+        passed = false;
+        text += strings::concat(step, "FAILED - ", why, "\n");
+        // Leave nothing behind: Vanilla, then delete the stored copy.
+        (void)install::setVanilla(target, env);
+        (void)install::removeStoredMod(env, kTitle, downloadId);
+        return text;
+    };
+
+    install::InstallRequest request;
+    request.downloadId = downloadId;
+    request.archive = archive;
+    request.format = mods::ArchiveFormat::Zip;
+    request.mod = {"akeno-self-test", "download-test"};
+    request.name = "Akeno download test";
+    request.version = "1";
+    request.titleId = kTitle;
+    // Akeno's own harmless test file, so the label may allow it; real mods need the catalogue.
+    request.catalogueStatus = providers::CompatibilityStatus::Verified;
+    request.catalogueInstallable = true;
+    auto stored = install::storeMod(request, env);
+    if (!stored) return failed("Store:    ", stored.error().describe());
+    text += strings::concat("Store:    PASSED - ", stored->files.size(), " file(s) kept in ",
+                            (context.paths().mods() / kTitle / downloadId).string(), "\n");
+
+    auto applied = install::applyOverlay(target, env);
+    if (!applied) return failed("Apply:    ", applied.error().describe());
+    const auto& file = stored->files.front();
+    const std::filesystem::path placed = applied->backport / file.installPath;
+    auto hash = security::sha256File(placed);
+    if (!hash || hash.value() != file.sha256) return failed("Apply:    ", "the file is not in place: " + placed.string());
+    text += strings::concat("Apply:    PASSED - ", placed.string(), " in place, SHA-256 matches\n");
+
+    auto vanilla = install::setVanilla(target, env);
+    if (!vanilla) return failed("Vanilla:  ", vanilla.error().describe());
+    struct stat info {};
+    if (::lstat(applied->backport.c_str(), &info) == 0) return failed("Vanilla:  ", "the overlay is still there");
+    text += "Vanilla:  PASSED - the overlay was removed\n";
+
+    auto removed = install::removeStoredMod(env, kTitle, downloadId);
+    if (!removed) return failed("Remove:   ", removed.error().describe());
+    text += "Remove:   PASSED - the stored copy was deleted\n";
+    return text;
+}
+
 }  // namespace
 
 DownloadTestSpec builtinDownloadTest() {
     return DownloadTestSpec{
         // HEAD = the repository's default branch, whatever it is called.
         "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/HEAD/assets/test/download-test.zip",
-        AKENO_DOWNLOAD_TEST_SHA256, AKENO_DOWNLOAD_TEST_SIZE, std::nullopt};
+        AKENO_DOWNLOAD_TEST_SHA256, AKENO_DOWNLOAD_TEST_SIZE, std::nullopt, false};
 }
 
 int runDownloadTest(AppContext& context, const DownloadTestSpec& spec) {
@@ -197,6 +260,7 @@ int runDownloadTest(AppContext& context, const DownloadTestSpec& spec) {
                         : "Result:   FAILED - " + file.error().message;
         if (passed) {
             result += "\n\n" + checkTestArchive(context, queued->id, file.value(), spec.hardLinks, passed);
+            if (passed && spec.overlayTest) result += "\n" + overlayTest(context, queued->id, file.value(), passed);
         }
     } else if (info->record.state == downloads::DownloadState::Failed) {
         result = "Result:   FAILED - " + info->record.error;

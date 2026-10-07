@@ -282,7 +282,7 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
         }
     }
 
-    addHeadingLine(lines, "Install plan (dry run: nothing is changed)");
+    addHeadingLine(lines, "Install plan (CROSS installs; nothing changes before that)");
     if (!report.plan) {
         addWrappedLines(canvas, lines, "This download is not linked to an installed game, so there is no plan.", width,
                         FontRole::Caption, theme::kTextSecondary);
@@ -293,8 +293,13 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
                             theme::kTextPrimary, true);
             addWrappedLines(canvas, lines, step.detail, width, FontRole::Small, theme::kTextSecondary);
         }
-        addWrappedLines(canvas, lines, "Not carried out: " + report.plan->notExecutableReason, width, FontRole::Caption,
-                        theme::kWarning);
+        if (report.plan->executable) {
+            addWrappedLines(canvas, lines, "Press CROSS to install. Nothing changes before you confirm.", width,
+                            FontRole::Caption, theme::kOk);
+        } else {
+            addWrappedLines(canvas, lines, "Cannot be installed: " + report.plan->notExecutableReason, width,
+                            FontRole::Caption, theme::kWarning);
+        }
     }
 
     addHeadingLine(lines, strings::concat("Files (", a.files.size(), ")"));
@@ -316,6 +321,10 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
 }  // namespace
 
 void ModCheckScreen::update(UiEnv& env) {
+    bool confirmed = false;
+    if (confirmInstall_.take(confirmed) && confirmed) {
+        env.commands.installChecked(downloadId_);
+    }
     if (!requested_) {
         requested_ = true;
         env.commands.checkDownload(downloadId_, false);
@@ -339,6 +348,29 @@ NavRequest ModCheckScreen::handle(Action action, UiEnv& env) {
                 env.commands.checkDownload(downloadId_, true);
             }
             break;
+        case Action::Confirm: {
+            if (!mine || view.running || !view.report || !view.report->plan) break;
+            const mods::InstallPlan& plan = *view.report->plan;
+            if (!plan.executable) {
+                env.showToast(plan.notExecutableReason.empty() ? "This mod cannot be installed."
+                                                               : plan.notExecutableReason,
+                              ToastKind::Error);
+                break;
+            }
+            if (env.commands.installBusy()) {
+                env.showToast("Another mod operation is running.", ToastKind::Warning);
+                break;
+            }
+            std::vector<std::string> lines{
+                strings::concat("Akeno keeps ", plan.files, " files (", strings::formatBytes(plan.bytes),
+                                ") and builds the overlay for ", plan.titleId, " from copies (",
+                                strings::formatBytes(plan.bytes), " more)."),
+                "ShadowMountPlus applies it the next time the game starts. The game's own files are not changed.",
+                "Vanilla on the game's page turns all mods off again.",
+            };
+            return NavRequest::push(std::make_unique<ConfirmScreen>("Install this mod?", std::move(lines), "Install",
+                                                                    confirmInstall_.callback(), false));
+        }
         case Action::PageDown:
         case Action::Down:
             scroll_ = std::min(maxScroll_, scroll_ + (action == Action::PageDown ? 8 : 1));
@@ -356,8 +388,13 @@ NavRequest ModCheckScreen::handle(Action action, UiEnv& env) {
 std::vector<ButtonHint> ModCheckScreen::hints(const UiEnv& env) const {
     const ModCheckView& view = env.state.check;
     if (view.downloadId == downloadId_ && view.running) return {{ButtonHint::Button::Circle, "Cancel"}};
-    return {{ButtonHint::Button::L2R2, "Scroll"}, {ButtonHint::Button::Triangle, "Check again"},
-            {ButtonHint::Button::Circle, "Back"}};
+    std::vector<ButtonHint> hints{{ButtonHint::Button::L2R2, "Scroll"},
+                                  {ButtonHint::Button::Triangle, "Check again"},
+                                  {ButtonHint::Button::Circle, "Back"}};
+    if (view.downloadId == downloadId_ && view.report && view.report->plan && view.report->plan->executable) {
+        hints.push_back({ButtonHint::Button::Cross, "Install"});
+    }
+    return hints;
 }
 
 void ModCheckScreen::render(ICanvas& canvas, UiEnv& env) {

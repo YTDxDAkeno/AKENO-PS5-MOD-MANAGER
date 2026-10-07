@@ -163,8 +163,8 @@ TEST_CASE("the dry-run plan describes an overlay and never the game files") {
     ModAnalysis analysis = analyzeMod(input({file("Content/a.pak", "x", 1000), file("Content/b.pak", "x", 2000)}));
     InstallPlan plan = planInstall(analysis, paths, "PPSA90001", "0123456789abcdef");
     CHECK_FALSE(plan.changesGameFiles);
-    CHECK_FALSE(plan.executable);
-    CHECK(plan.notExecutableReason.find("Phase 5") != std::string::npos);
+    CHECK(plan.executable);
+    CHECK(plan.notExecutableReason.empty());
     CHECK(plan.files == 2);
     CHECK(plan.bytes == 3000);
     CHECK(plan.modStore == std::filesystem::path("/data/akeno-mod-manager/mods/PPSA90001/0123456789abcdef"));

@@ -90,7 +90,7 @@ struct OtherMod {
 };
 std::vector<Conflict> predictConflicts(const ModAnalysis& mod, const std::vector<OtherMod>& others);
 
-// The steps Phase 5 would take, described for the dry run.
+// The steps an install takes (src/install/OverlayManager.cpp), described before it starts.
 struct PlanStep {
     std::string title;
     std::string detail;
@@ -106,7 +106,7 @@ struct InstallPlan {
     std::uint64_t bytes = 0;
     std::uint64_t overlayExtraBytes = 0; // space for overlay copies when hard links do not work
     bool changesGameFiles = false;       // always false: overlays only
-    bool executable = false;             // false in this version
+    bool executable = false;             // no blockers and the label allows installing
     std::string notExecutableReason;
 };
 // `hardLinks`: whether hard links work in Akeno's storage (from the system check); without

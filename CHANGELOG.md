@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The project follows
 semantic versioning once it reaches 1.0. Until then, minor versions may change
 anything.
 
+## [0.2.0-alpha] - unreleased
+
+**Phase 5: installing mods through ShadowMountPlus backports.** Unit and mock
+tested on a Linux host; **not hardware tested yet.**
+
+### Added
+- `src/install/OverlayManager`: a checked download is unpacked again and kept
+  in `mods/<TITLE_ID>/<download id>/files/` with a list of files and SHA-256
+  (`mods/<TITLE_ID>/state.json`). Applying builds the overlay from copies of
+  every enabled mod (later mods win) in a staging folder, re-verifies every
+  stored file, allows only plain files and folders, refuses `fakelib`,
+  `fakelib2`, `sce_sys`, `sce_module`, over-long or too deep paths and more
+  than 256 entries for installed packages, then renames it into
+  `/data/homebrew/backports/<TITLE_ID>`. Each step is journaled; the new
+  overlay's identity is recorded before it is moved into place.
+- Vanilla: removes Akeno's backport folder; mods stay stored.
+- Refused: a backport folder Akeno did not create (never touched), a mounted
+  or running game, games outside `/data/homebrew` (except installed packages),
+  a different drive, a pending recovery, mods the analysis does not allow.
+- UI: CROSS on the check screen installs (after confirmation); the game page
+  has "Vanilla (mods off)" and shows stored and active mods.
+- System check: installation is available when ShadowMountPlus is connected
+  and its backports folder is on the same drive as Akeno's storage (Safe Mode
+  OFF then).
+- `AkenoSelfCheck.elf` ladder step 10: installs, applies, checks, turns off and
+  removes the test file for the test title `TEST00000` only.
+- `SafeFs::copyFile` uses plain read/write with fsync.
+
 ## [0.1.0-alpha] - 2026-10-07
 
 First development release: **Phase 0 (research), Phase 1 (safe game browser),

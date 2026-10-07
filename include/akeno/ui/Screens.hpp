@@ -56,6 +56,7 @@ private:
     std::string titleId_;
     FocusList actions_;
     bool catalogRequested_ = false;
+    ChoiceRequest confirmVanilla_;
 };
 
 // Discover tab: the games of the Akeno Catalogue, installed games first.
@@ -167,6 +168,7 @@ private:
     bool requested_ = false;
     int scroll_ = 0;
     int maxScroll_ = 0;
+    ChoiceRequest confirmInstall_;
 };
 
 // A yes/no question. Cancel is focused first; CIRCLE also cancels.
