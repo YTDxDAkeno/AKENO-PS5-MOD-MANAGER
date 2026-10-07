@@ -203,7 +203,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20) |
 | 5 | ShadowMountPlus overlay, Vanilla | implemented in 0.2.0-alpha; overlay for a test title hardware tested (12.20), real mods not yet |
 | 6 | Load order, profiles, dependencies | planned |
-| 7 | Nexus Mods, mod.io | planned |
+| 7 | Nexus Mods, mod.io | Nexus Mods browsing and Premium downloads implemented ([docs/nexus-mods.md](docs/nexus-mods.md), not hardware tested); mod.io planned |
 | 8 | Advanced compatibility (Unreal) | planned |
 
 ## Known limitations

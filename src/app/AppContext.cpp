@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/app/AppContext.hpp"
 
+#include <cctype>
+
 #include "akeno/core/BuildInfo.hpp"
 #include "akeno/core/Embedded.hpp"
 #include "akeno/core/Limits.hpp"
@@ -163,6 +165,21 @@ Result<std::unique_ptr<AppContext>> AppContext::create(const CommandLine& comman
     downloadOptions.directory = ctx->paths_.downloads();
     ctx->downloads_ =
         std::make_unique<downloads::DownloadManager>(*ctx->http_, *ctx->fs_, ctx->db_.get(), std::move(downloadOptions));
+
+    // 9. Nexus Mods: only with the user's own personal API key (never logged).
+    const fs::path keyFile = ctx->paths_.root / "nexus-apikey.txt";
+    if (fs::exists(keyFile)) {
+        auto key = security::readFileBounded(keyFile, 4096);
+        std::string trimmed = key ? key.value() : std::string();
+        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back())) != 0) trimmed.pop_back();
+        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())) != 0) trimmed.erase(0, 1);
+        if (providers::isPlausibleNexusKey(trimmed)) {
+            ctx->nexus_ = std::make_shared<providers::NexusProvider>(*ctx->http_, std::move(trimmed));
+            logger().info("nexus", "Nexus Mods enabled with the API key in nexus-apikey.txt");
+        } else {
+            logger().warn("nexus", "nexus-apikey.txt does not contain a valid Nexus Mods API key; Nexus is off");
+        }
+    }
     return ctx;
 }
 

@@ -90,6 +90,8 @@ private:
     void refreshDownloads();
     void removeOrphanReports();
     void addNotice(std::string text, ToastKind kind);
+    std::shared_ptr<providers::IModProvider> providerFor(std::string_view providerId) const;
+    std::shared_ptr<providers::IModProvider> providerForGame(const std::string& providerGameId) const;
     Result<std::string> fetchIcon(const games::GameInfo& game);
     Result<std::string> fetchRemoteImage(const std::string& url);
 

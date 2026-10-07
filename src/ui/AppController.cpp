@@ -42,7 +42,7 @@ std::string_view statusLabel(providers::CompatibilityStatus status) {
 
 // Turns a mod into a download request. The compatibility rules are applied here, whatever the
 // screen offered: mods that may not be installed on PS5 are never downloaded for installing.
-Result<downloads::DownloadRequest> buildDownloadRequest(providers::AkenoCatalogProvider& provider,
+Result<downloads::DownloadRequest> buildDownloadRequest(providers::IModProvider& provider,
                                                         const providers::ModRef& ref,
                                                         const std::optional<providers::GameContext>& game,
                                                         bool confirmed) {
@@ -61,7 +61,7 @@ Result<downloads::DownloadRequest> buildDownloadRequest(providers::AkenoCatalogP
                          "This mod is EXPERIMENTAL for your game version. Confirm the download first.");
     }
     if (details->files.empty()) {
-        return makeError(ErrorCode::NotFound, "The catalogue lists no file for this mod.");
+        return makeError(ErrorCode::NotFound, "No downloadable file (zip or 7z) is listed for this mod.");
     }
     const providers::ModFile* file = &details->files.front();
     for (const auto& candidate : details->files) {
@@ -88,12 +88,16 @@ Result<downloads::DownloadRequest> buildDownloadRequest(providers::AkenoCatalogP
     request.expectedSha256 = ticket->expectedSha256;
     request.format = mods::parseArchiveFormat(ticket->format);
     request.catalogueInstallable = details->installable;
-    auto manifest = provider.manifest(ref, nullptr);
-    if (!manifest) {
-        return std::move(manifest).error();
+    // Only the Akeno Catalogue describes how an archive maps onto the game; other providers'
+    // archives are installed as they are laid out (shown by the check before installing).
+    if (auto* catalogue = dynamic_cast<providers::AkenoCatalogProvider*>(&provider)) {
+        auto manifest = catalogue->manifest(ref, nullptr);
+        if (!manifest) {
+            return std::move(manifest).error();
+        }
+        request.archiveRoot = manifest->archiveRoot;
+        request.targetPrefix = manifest->targetPrefix;
     }
-    request.archiveRoot = manifest->archiveRoot;
-    request.targetPrefix = manifest->targetPrefix;
     return request;
 }
 
@@ -442,10 +446,21 @@ void AppController::resetCatalogView() {
     state_.modDetail.request = detailRequest;
 }
 
+std::shared_ptr<providers::IModProvider> AppController::providerFor(std::string_view providerId) const {
+    if (providerId == providers::kNexusProviderId) return context_.nexus();
+    return context_.catalogue();
+}
+
+std::shared_ptr<providers::IModProvider> AppController::providerForGame(const std::string& providerGameId) const {
+    if (strings::startsWith(providerGameId, providers::kNexusGamePrefix)) return context_.nexus();
+    return context_.catalogue();
+}
+
 void AppController::loadCatalogGames(bool forceRefresh) {
     CatalogView& view = state_.catalog;
     auto provider = context_.catalogue();
-    if (!provider) {
+    auto nexus = context_.nexus();
+    if (!provider && !nexus) {
         view.error = context_.catalogueError().value_or(
             makeError(ErrorCode::Unavailable, "The mod catalogue address is not valid."));
         return;
@@ -455,9 +470,27 @@ void AppController::loadCatalogGames(bool forceRefresh) {
     }
     view.loading = true;
     const std::uint64_t generation = catalogGeneration_;
-    tasks_.submit([this, provider, forceRefresh, generation] {
-        if (forceRefresh) provider->clearCache();
-        auto games = provider->listGames(nullptr);
+    if (nexus) {
+        std::vector<providers::InstalledGameName> installed;
+        for (const auto& game : allGames_) installed.push_back({game.titleId, game.name});
+        nexus->setInstalledGames(std::move(installed));
+    }
+    tasks_.submit([this, provider, nexus, forceRefresh, generation] {
+        Result<std::vector<providers::ProviderGame>> games = std::vector<providers::ProviderGame>{};
+        if (provider) {
+            if (forceRefresh) provider->clearCache();
+            games = provider->listGames(nullptr);
+        }
+        if (nexus) {
+            auto more = nexus->listGames(nullptr);
+            if (more) {
+                if (!games) games = std::vector<providers::ProviderGame>{};  // Nexus still works
+                for (auto& game : more.value()) games->push_back(std::move(game));
+            } else {
+                logger().warn("nexus", "could not load the Nexus Mods games: " + more.error().describe());
+                if (!provider) games = more.error();
+            }
+        }
         mainQueue_.post([this, generation, games = std::move(games)]() mutable {
             if (generation != catalogGeneration_) return;
             CatalogView& current = state_.catalog;
@@ -482,7 +515,7 @@ void AppController::loadModList(const providers::SearchQuery& query) {
     view.query = query;
     view.error.reset();
     if (!sameList) view.page.reset();
-    auto provider = context_.catalogue();
+    auto provider = providerForGame(query.providerGameId);
     if (!provider) {
         view.loading = false;
         view.error = context_.catalogueError().value_or(
@@ -518,7 +551,7 @@ void AppController::loadModDetails(const providers::ModRef& ref, const std::opti
     ++view.request;
     view.ref = ref;
     view.error.reset();
-    auto provider = context_.catalogue();
+    auto provider = providerFor(ref.providerId);
     if (!provider) {
         view.loading = false;
         view.error = context_.catalogueError().value_or(
@@ -586,9 +619,9 @@ void AppController::startDownload(const providers::ModRef& ref, const std::optio
         addNotice("Downloading is not available: " + report->features.downloading.reason, ToastKind::Error);
         return;
     }
-    auto provider = context_.catalogue();
+    auto provider = providerFor(ref.providerId);
     if (!provider) {
-        addNotice("The mod catalogue address is not valid.", ToastKind::Error);
+        addNotice("This mod source is not available.", ToastKind::Error);
         return;
     }
     downloads::DownloadManager* manager = &context_.downloads();

@@ -654,7 +654,9 @@ DownloadManager::Outcome DownloadManager::process(const DownloadRecord& job, con
         failure = "Could not read the downloaded file to verify it: " + digest.error().message;
         return Outcome::Failed;
     }
-    if (digest.value() != job.request.expectedSha256) {
+    if (job.request.expectedSha256.empty()) {
+        logger().info("downloads", job.id + ": the provider has no checksum; SHA-256 of the file: " + digest.value());
+    } else if (digest.value() != job.request.expectedSha256) {
         logger().error("downloads", job.id + ": SHA-256 mismatch, expected " + job.request.expectedSha256 + ", got " +
                                         digest.value());
         (void)fs_.removeFile(partial);

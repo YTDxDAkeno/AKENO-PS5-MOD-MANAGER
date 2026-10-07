@@ -76,7 +76,9 @@ Status validateRequest(const DownloadRequest& request) {
         return makeError(ErrorCode::InvalidArgument, "The download size is unknown or too large.",
                          std::to_string(request.expectedSize));
     }
-    if (!security::isSha256Hex(request.expectedSha256)) {
+    // Nexus Mods publishes no checksums: there the exact size is checked and the hash recorded.
+    const bool checksumOptional = request.mod.providerId == "nexus" && request.expectedSha256.empty();
+    if (!checksumOptional && !security::isSha256Hex(request.expectedSha256)) {
         return makeError(ErrorCode::InvalidArgument,
                          "The download has no valid SHA-256 checksum, so it could not be verified.");
     }

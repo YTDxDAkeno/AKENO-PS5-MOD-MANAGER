@@ -585,7 +585,7 @@ NavRequest ModDetailScreen::handle(Action action, UiEnv& env) {
             }
             if (d->needsConfirmation) {
                 std::vector<std::string> lines = d->compatibilityReasons;
-                lines.push_back("It is only downloaded and checked. Nothing is installed in this version.");
+                lines.push_back("It is downloaded and checked first. Installing needs another confirmation.");
                 return NavRequest::push(std::make_unique<ConfirmScreen>("Download an EXPERIMENTAL mod?", std::move(lines),
                                                                         "Download anyway",
                                                                         confirmExperimental_.callback(), true));

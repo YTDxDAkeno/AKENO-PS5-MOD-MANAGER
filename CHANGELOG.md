@@ -31,6 +31,12 @@ tested on a Linux host; **not hardware tested yet.**
 - `AkenoSelfCheck.elf` ladder step 10: installs, applies, checks, turns off and
   removes the test file for the test title `TEST00000` only.
 - `SafeFs::copyFile` uses plain read/write with fsync.
+- Nexus Mods provider (Phase 7, official v1 API, the user's own personal API key
+  in `nexus-apikey.txt`, never logged): Nexus games matched to installed games by
+  name appear in Discover; mods are listed, shown and (Premium only, as Nexus
+  requires) downloaded. Always EXPERIMENTAL. Nexus files have no published
+  checksum: the size is checked and the SHA-256 recorded. See
+  `docs/nexus-mods.md`. Tested with recorded answers only.
 
 ## [0.1.0-alpha] - 2026-10-07
 
