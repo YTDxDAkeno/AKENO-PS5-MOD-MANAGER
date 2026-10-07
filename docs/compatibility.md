@@ -26,7 +26,7 @@ upgraded without evidence.
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
 | Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | partly: one small file downloaded and verified, 2026-10-07; resume and retries not hardware tested |
-| Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | partly: the one-file test archive unpacked, 2026-10-07; deleting the staging folder failed silently, fixed afterwards, **not re-tested** |
+| Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | partly: the one-file test archive unpacked and its staging folder deleted, 2026-10-07 (third run) |
 | Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | partly: the test archive analysed and planned (copies), 2026-10-07 |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | firmware detection ✓ 2026-10-07; notifications ✗ (not reported) |
@@ -107,3 +107,18 @@ Result:
   Cause unknown; overlays will use copies.
 * The test file was deleted. Nothing outside `/data/akeno-mod-manager` was written.
 Logs: system-check, games, download-test and akeno.log (not published)
+
+### 2026-10-07 - repository owner - Akeno 0.1.0-alpha (402ffbba2d2b)
+Console: PS5, firmware 12.20
+Environment: as in the previous entries
+Steps (docs/safety-model.md §9): `AkenoSelfCheck.elf` (steps 1 to 9)
+Result:
+* System check, game list (14 of 14 versions), download (347 ms, SHA-256 matched), unpacking,
+  analysis and dry-run plan (copies): as in the second run.
+* The staging folder of this check **was deleted** (the new delete reported success and the
+  folder was gone). The report still said "NOT EMPTY", naming only
+  `check-a387e572f9c8e51f-20261007-150415`, the folder the second run's build left behind.
+  Fixed afterwards: at start, when no operation is recorded in the journal, Akeno removes its
+  own leftover entries in staging (`check-*`, `link-probe-*`) and logs each one.
+* Hard links: `link()` still fails with `ENOENT`; overlays will use copies.
+Logs: akeno.log and download-test (not published)

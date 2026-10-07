@@ -27,6 +27,8 @@ interface and real mods are **not hardware tested**.
   reported success (second hardware test). Folders are now deleted with plain
   `lstat`/`opendir`/`unlink`/`rmdir` calls and checked afterwards; the download
   test lists anything left in staging; probe clean-up failures are logged.
+- Leftover staging entries of earlier builds (`check-*`, `link-probe-*`) are
+  removed at start when no operation is in progress (third hardware test).
 
 ### Added
 - Research notes on ShadowMountPlus 1.7, the PS5 payload SDK, pacbrew libraries,

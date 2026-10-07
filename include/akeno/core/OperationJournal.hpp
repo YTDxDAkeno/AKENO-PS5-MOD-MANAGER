@@ -67,4 +67,9 @@ private:
     std::optional<OperationState> current_;
 };
 
+// Removes what Akeno itself leaves in staging ("check-*" folders, "link-probe-*" files) when no
+// operation is recorded: leftovers of builds that could not delete them. Call it only when the
+// journal is empty. Other names are left alone. Returns the names removed.
+std::vector<std::string> removeLeftoverStaging(const security::SafeFs& fs, const std::filesystem::path& stagingRoot);
+
 }  // namespace akeno

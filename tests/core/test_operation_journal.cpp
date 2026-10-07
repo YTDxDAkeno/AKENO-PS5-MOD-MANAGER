@@ -129,3 +129,19 @@ TEST_CASE("overlay-touching operations need a restore") {
     CHECK(advice.needsOverlayRestore);
     CHECK(advice.headline == "Interrupted overlay activation detected.");
 }
+
+TEST_CASE("leftover staging entries of Akeno are removed, anything else stays") {
+    test::TempDir dir;
+    security::SafeFs safeFs{security::WriteGuard::create({dir.path()}).value()};
+    const auto staging = dir.path() / "staging";
+    std::filesystem::create_directories(staging / "check-a387e572f9c8e51f-20261007-150415" / "akeno-download-test");
+    test::writeText(staging / "check-a387e572f9c8e51f-20261007-150415" / "akeno-download-test" / "README.txt", "x");
+    test::writeText(staging / "link-probe-a", "probe");
+    test::writeText(staging / "notes.txt", "not Akeno's");
+    auto removed = removeLeftoverStaging(safeFs, staging);
+    CHECK(removed.size() == 2);
+    CHECK_FALSE(std::filesystem::exists(staging / "check-a387e572f9c8e51f-20261007-150415"));
+    CHECK_FALSE(std::filesystem::exists(staging / "link-probe-a"));
+    CHECK(std::filesystem::exists(staging / "notes.txt"));
+    CHECK(removeLeftoverStaging(safeFs, dir.path() / "missing").empty());
+}

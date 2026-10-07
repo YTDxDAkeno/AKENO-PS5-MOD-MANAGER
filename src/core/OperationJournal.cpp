@@ -187,4 +187,18 @@ Status OperationJournal::cleanStaging(const OperationState& state, const fs::pat
     return fs_.removeFile(file_);
 }
 
+std::vector<std::string> removeLeftoverStaging(const security::SafeFs& fs, const fs::path& stagingRoot) {
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (fs::directory_iterator it(stagingRoot, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (strings::startsWith(name, "check-") || strings::startsWith(name, "link-probe-")) names.push_back(name);
+    }
+    std::vector<std::string> removed;
+    for (const std::string& name : names) {
+        if (fs.removeTree(stagingRoot / name)) removed.push_back(name);
+    }
+    return removed;
+}
+
 }  // namespace akeno

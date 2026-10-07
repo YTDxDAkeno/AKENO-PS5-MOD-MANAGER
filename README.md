@@ -70,7 +70,7 @@ Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 
 | Firmware | Status |
 |---|---|
-| 12.20 (initial target) | **partly tested** (2026-10-07): system check, ShadowMountPlus 1.7beta4 API, game list with versions, HTTPS, database, and one test download with unpacking worked; cleaning up the staging folder failed (fixed, not re-tested). See the [log](docs/compatibility.md#hardware-test-log) |
+| 12.20 (initial target) | **partly tested** (2026-10-07): system check, ShadowMountPlus 1.7beta4 API, game list with versions, HTTPS, database, and one test download with unpacking worked; cleaning up the staging folder works since the third run. See the [log](docs/compatibility.md#hardware-test-log) |
 | any other | not tested |
 
 Firmware is shown for information only. Akeno enables features from
@@ -199,7 +199,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 1 | Safe game browser | implemented; system check and game list partly hardware tested (12.20) |
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
 | 3 | Download engine | implemented; one test download hardware tested (12.20) |
-| 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20), staging cleanup fixed but not re-tested |
+| 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20) |
 | 5 | ShadowMountPlus overlay, rollback, Vanilla | planned |
 | 6 | Load order, profiles, dependencies | planned |
 | 7 | Nexus Mods, mod.io | planned |

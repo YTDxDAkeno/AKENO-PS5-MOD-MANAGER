@@ -78,6 +78,11 @@ Result<std::unique_ptr<AppContext>> AppContext::create(const CommandLine& comman
         ctx->interrupted_ = interrupted->value();
         logger().warn("recovery", "interrupted operation found: " + ctx->interrupted_->operationId + " (" +
                                       ctx->interrupted_->kind + ", step '" + ctx->interrupted_->step + "')");
+    } else {
+        // Nothing is in progress, so Akeno's own entries in staging are leftovers.
+        for (const auto& name : removeLeftoverStaging(*ctx->fs_, ctx->paths_.staging())) {
+            logger().info("recovery", "removed a leftover staging entry: " + name);
+        }
     }
 
     // 5. Database: open, back up, migrate, load settings.
