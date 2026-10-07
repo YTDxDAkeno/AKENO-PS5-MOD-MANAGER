@@ -87,12 +87,14 @@ Full guide: [docs/installing.md](docs/installing.md).
 For a first, minimal hardware test without the user interface, send
 **`AkenoSelfCheck.elf`** to your payload loader (port 9021). It has no user
 interface and does not touch video output. It runs the system check, lists
-your games, writes both reports to `/data/akeno-mod-manager/logs/` and shows a
-notification (see [docs/installing.md](docs/installing.md#first-hardware-test-headless)).
+your games, and (when the network works) downloads, verifies, unpacks and
+analyses a tiny harmless test archive, which it deletes again. Reports go to
+`/data/akeno-mod-manager/logs/` and a notification is shown (see
+[docs/installing.md](docs/installing.md#first-hardware-test-headless)).
 
 > Installing Akeno itself once may involve a PC (FTP or USB). The "no PC"
-> promise is about using mods: once Akeno is on the console, no PC should be
-> needed for mod workflows. That arrives with the later phases.
+> promise is about using mods: once Akeno is on the console, browsing,
+> downloading and checking mods need no PC. Installing arrives with Phase 5.
 
 ## First launch
 
@@ -107,27 +109,31 @@ ShadowMount              detected (version 1.7)
 ShadowMount API          connected (ShadowMount+ 1.7, API v1)
 Writable data storage    OK - 812 GB free
 Networking               OK (secure connection verified)
-Database                 OK (schema v1)
+Database                 OK (schema v3)
 Overlay capability       not implemented in this build (Phase 5)
 
 SAFE MODE: ON
-Game library: AVAILABLE    Installation: NOT YET IMPLEMENTED
+Game library: AVAILABLE    Mod browsing: AVAILABLE    Downloading: AVAILABLE
+Installation: NOT YET IMPLEMENTED
 ```
 
 Controls: **D-pad / left stick** move, **✕** select, **○** back,
 **L1/R1** switch tabs, **△ / □ / OPTIONS** screen actions shown in the footer.
 
-## Supported mod types (planned)
+## Supported mod types
 
 * Data and asset mods: textures, meshes, outfits, already-PS5-compatible
-  Unreal `.pak` / `.utoc` / `.ucas` replacements.
-* Installed as overlays only. Original files are never touched.
+  Unreal `.pak` / `.utoc` / `.ucas` replacements. These can be browsed,
+  downloaded and checked now.
+* They will be installed as overlays only (Phase 5). Original files are never
+  touched.
 
 ## Unsupported mod types
 
 * Anything that ships native code: Windows `.exe` / `.dll` (e.g. `dinput8.dll`,
   UE4SS), script extenders, BepInEx, DirectX hooks, and PS5 `.elf` / `.sprx`
-  or `fakelib` library overlays. Akeno never executes downloaded code.
+  or `fakelib` library overlays. Akeno never executes downloaded code, and the
+  mod check detects such files by their content, not only their names.
 * PC mods that need conversion. No automatic PC-to-PS5 conversion is claimed.
 
 ## Safety model
