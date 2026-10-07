@@ -3,7 +3,9 @@
 This directory is the **published Akeno Catalogue**: the list of mods the
 Akeno PS5 Mod Manager shows in its Discover tab. The application reads it from
 
-    https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/main/catalog/
+    https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/HEAD/catalog/
+
+(`HEAD` is the repository's default branch.)
 
 (Settings > Mod catalogue address can point Akeno at another catalogue.)
 

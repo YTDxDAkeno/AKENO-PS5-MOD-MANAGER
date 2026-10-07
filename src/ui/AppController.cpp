@@ -681,6 +681,8 @@ void AppController::checkDownload(const std::string& id, bool again) {
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
     const bool interrupted = context_.interruptedOperation().has_value();
+    const std::optional<bool> hardLinks =
+        state_.systemCheck.report ? state_.systemCheck.report->hardLinksSupported : std::nullopt;
 
     view.running = true;
     checkCancel_ = CancellationToken{};
@@ -694,7 +696,7 @@ void AppController::checkDownload(const std::string& id, bool again) {
         bool pending = false;
     };
     auto shared = std::make_shared<Progress>();
-    tasks_.submit([this, request, again, cancel, interrupted, alive, shared] {
+    tasks_.submit([this, request, again, cancel, interrupted, hardLinks, alive, shared] {
         Result<mods::ModCheckReport> result = makeError(ErrorCode::NotFound, "No stored result.");
         if (!again) result = mods::loadReport(context_.paths(), request.downloadId);
         if (!result) {
@@ -721,7 +723,7 @@ void AppController::checkDownload(const std::string& id, bool again) {
                 if (!saved) logger().warn("check", "could not store the result: " + saved.error().describe());
             }
         }
-        if (result) mods::completeReport(result.value(), context_.paths());
+        if (result) mods::completeReport(result.value(), context_.paths(), hardLinks);
         mainQueue_.post([this, alive, id = request.downloadId, name = request.displayName,
                          result = std::move(result)]() mutable {
             if (!alive->load()) return;

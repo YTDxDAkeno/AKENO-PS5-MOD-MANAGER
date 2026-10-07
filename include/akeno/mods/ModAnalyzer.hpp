@@ -104,11 +104,14 @@ struct InstallPlan {
     std::vector<std::pair<std::string, std::string>> mapping;  // archive path -> backport path (first 200)
     std::size_t files = 0;
     std::uint64_t bytes = 0;
+    std::uint64_t overlayExtraBytes = 0; // space for overlay copies when hard links do not work
     bool changesGameFiles = false;       // always false: overlays only
     bool executable = false;             // false in this version
     std::string notExecutableReason;
 };
+// `hardLinks`: whether hard links work in Akeno's storage (from the system check); without
+// them the overlay holds copies and needs as much space again.
 InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, const std::string& titleId,
-                        const std::string& downloadId);
+                        const std::string& downloadId, std::optional<bool> hardLinks = std::nullopt);
 
 }  // namespace akeno::mods

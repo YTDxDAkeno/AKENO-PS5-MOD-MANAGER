@@ -6,16 +6,18 @@
 > browser)**, **Phase 2 (an online mod browser for the Akeno Catalogue)**, **Phase 3 (verified
 > downloads)** and **Phase 4 (secure unpacking, analysis and a dry-run install plan)**. It
 > **does not install mods yet**, and it **never modifies game files**.
-> It has been **compiled and unit tested on a Linux host**. It has **not been tested on PS5 hardware**.
-> Do not read anything in this repository as "works on firmware 12.20" until it appears in the
-> [hardware test log](docs/compatibility.md#hardware-test-log).
+> It has been **compiled and unit tested on a Linux host**. On PS5 hardware, only the headless
+> system check and the game list have been tried, once, on firmware 12.20 with ShadowMountPlus
+> 1.7beta4; downloads, mod checks and the user interface are **not hardware tested**.
+> Do not read anything in this repository as "works on firmware 12.20" beyond what the
+> [hardware test log](docs/compatibility.md#hardware-test-log) records.
 
 | | |
 |---|---|
 | Version | `0.1.0-alpha` |
 | License | GPL-3.0-or-later |
 | Target | PS5 with a homebrew environment (kstuff) and **ShadowMountPlus 1.7+** |
-| Firmware testing | none yet (see below) |
+| Firmware testing | first partial test on 12.20 (see below) |
 
 ---
 
@@ -59,7 +61,8 @@ Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 * A PS5 that can run homebrew ELF payloads (kstuff / kstuff-lite).
 * **ShadowMountPlus 1.7 or newer** with its HTTP API enabled (the default:
   `127.0.0.1:10101`). Akeno reads the game library from it and, in later
-  releases, will use its backport overlays to apply mods.
+  releases, will use its backport overlays to apply mods. 1.7beta4 does not
+  report game versions; Akeno then reads them from each game's `param.json`.
 * The [websrv](https://github.com/ps5-payload-dev/websrv) Homebrew Launcher, to
   start the user interface with screen and controller.
 
@@ -67,7 +70,7 @@ Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 
 | Firmware | Status |
 |---|---|
-| 12.20 (initial target) | **not tested yet** |
+| 12.20 (initial target) | **partly tested** (2026-10-07): system check, ShadowMountPlus 1.7beta4 API, game list, HTTPS and database worked; the download test failed on a wrong test address (fixed, not re-tested). See the [log](docs/compatibility.md#hardware-test-log) |
 | any other | not tested |
 
 Firmware is shown for information only. Akeno enables features from
@@ -193,7 +196,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Research ([docs/research.md](docs/research.md)) | done |
-| 1 | Safe game browser | implemented (not hardware tested) |
+| 1 | Safe game browser | implemented; system check and game list partly hardware tested (12.20) |
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
 | 3 | Download engine | implemented (not hardware tested) |
 | 4 | Mod analyser, secure extraction, dry run | implemented (not hardware tested) |
@@ -204,8 +207,12 @@ cmake --build build-ps5   # -> build-ps5/dist/
 
 ## Known limitations
 
-* Not tested on a PS5 yet. Controller mapping, video output and notifications
-  follow the source of the SDK and SDL port and need hardware confirmation.
+* Barely tested on a PS5 yet (one headless run, see the log). Controller
+  mapping, video output and notifications follow the source of the SDK and
+  SDL port and need hardware confirmation.
+* On the first test console, hard links did not work in Akeno's folder.
+  Phase 5 overlays will then hold copies, so an installed mod needs its size
+  twice in free space.
 * The UI is launched through the websrv Homebrew Launcher. A native `.ffpkg`
   tile is planned but not produced yet.
 * Launching a game from Akeno is not implemented.

@@ -299,7 +299,7 @@ std::vector<ModCheckReport> loadReportsForTitle(const AppPaths& paths, const std
     return reports;
 }
 
-void completeReport(ModCheckReport& report, const AppPaths& paths) {
+void completeReport(ModCheckReport& report, const AppPaths& paths, std::optional<bool> hardLinks) {
     const auto others = loadReportsForTitle(paths, report.titleId, report.downloadId);
     std::vector<OtherMod> refs;
     refs.reserve(others.size());
@@ -307,7 +307,7 @@ void completeReport(ModCheckReport& report, const AppPaths& paths) {
     report.conflicts = predictConflicts(report.analysis, refs);
     // A plan needs a game; downloads not tied to an installed title have none.
     if (games::isValidTitleId(report.titleId)) {
-        report.plan = planInstall(report.analysis, paths, report.titleId, report.downloadId);
+        report.plan = planInstall(report.analysis, paths, report.titleId, report.downloadId, hardLinks);
     } else {
         report.plan.reset();
     }

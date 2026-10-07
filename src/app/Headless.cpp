@@ -57,6 +57,7 @@ int runListGames(AppContext& context) {
         text += strings::concat(game.titleId, "  ", game.name, "\n");
         text += strings::concat("    version ", game.displayVersion(), ", ", games::toString(game.platform), ", ",
                                 games::displayName(game.sourceType), game.mounted ? ", mounted" : "", "\n");
+        if (!game.versionSource.empty()) text += "    version from " + game.versionSource + "\n";
         if (!game.installPath.empty()) text += "    path    " + game.installPath + "\n";
         if (!game.runtimePath.empty()) text += "    runtime " + game.runtimePath + "\n";
         if (game.previousVersion) text += "    previously seen version " + *game.previousVersion + "\n";
@@ -75,7 +76,7 @@ namespace {
 
 // Ladder steps 7 to 9: unpack the test archive into staging, delete staging, describe the plan.
 std::string checkTestArchive(AppContext& context, const std::string& downloadId, const std::filesystem::path& archive,
-                             bool& passed) {
+                             std::optional<bool> hardLinks, bool& passed) {
     mods::ModCheckRequest request;
     request.downloadId = downloadId;
     request.archive = archive;
@@ -93,7 +94,7 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
     }
     std::error_code ec;
     const bool stagingEmpty = std::filesystem::is_empty(context.paths().staging(), ec) && !ec;
-    mods::completeReport(report.value(), context.paths());
+    mods::completeReport(report.value(), context.paths(), hardLinks);
     const auto& a = report->analysis;
     std::string text = strings::concat("Check:    PASSED - ", report->archiveFiles, " file(s) unpacked into ",
                                        context.paths().staging().string(), "\n");
@@ -106,6 +107,10 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
     if (report->plan) {
         text += strings::concat("Plan:     ", report->plan->steps.size(), " steps, not carried out (dry run)\n");
         for (const auto& [from, to] : report->plan->mapping) text += "          " + from + " -> " + to + "\n";
+        text += strings::concat("Overlay:  ", hardLinks == true    ? "hard links"
+                                              : hardLinks == false ? "copies (hard links do not work here)"
+                                                                   : "not probed",
+                                ", ", strings::formatBytes(report->plan->overlayExtraBytes), " extra\n");
     }
     if (!stagingEmpty) passed = false;
     return text;
@@ -115,8 +120,9 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
 
 DownloadTestSpec builtinDownloadTest() {
     return DownloadTestSpec{
-        "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/main/assets/test/download-test.zip",
-        AKENO_DOWNLOAD_TEST_SHA256, AKENO_DOWNLOAD_TEST_SIZE};
+        // HEAD = the repository's default branch, whatever it is called.
+        "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/HEAD/assets/test/download-test.zip",
+        AKENO_DOWNLOAD_TEST_SHA256, AKENO_DOWNLOAD_TEST_SIZE, std::nullopt};
 }
 
 int runDownloadTest(AppContext& context, const DownloadTestSpec& spec) {
@@ -175,7 +181,7 @@ int runDownloadTest(AppContext& context, const DownloadTestSpec& spec) {
                                           "Stored:   ", file->string())
                         : "Result:   FAILED - " + file.error().message;
         if (passed) {
-            result += "\n\n" + checkTestArchive(context, queued->id, file.value(), passed);
+            result += "\n\n" + checkTestArchive(context, queued->id, file.value(), spec.hardLinks, passed);
         }
     } else if (info->record.state == downloads::DownloadState::Failed) {
         result = "Result:   FAILED - " + info->record.error;

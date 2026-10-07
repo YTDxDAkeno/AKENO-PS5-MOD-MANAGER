@@ -86,3 +86,15 @@ TEST_CASE("catalogue addresses: https anywhere, plain http only on this machine"
     CHECK_FALSE(isValidCatalogueUrl("file:///data/catalog/"));
     CHECK_FALSE(isValidCatalogueUrl(""));
 }
+
+TEST_CASE("the old main-branch catalogue default follows the new default") {
+    auto db = freshDatabase();
+    REQUIRE(db->exec(std::string("INSERT INTO settings VALUES ('catalogue.url', '") +
+                     std::string(kLegacyDefaultCatalogueUrl) + "', 'x');")
+                .ok());
+    SettingsStore store(*db);
+    auto loaded = store.load();
+    REQUIRE(loaded.ok());
+    CHECK(loaded->warnings.empty());
+    CHECK(loaded->settings.catalogueUrl == kDefaultCatalogueUrl);
+}

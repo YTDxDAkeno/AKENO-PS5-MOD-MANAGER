@@ -285,7 +285,7 @@ std::vector<Conflict> predictConflicts(const ModAnalysis& mod, const std::vector
 }
 
 InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, const std::string& titleId,
-                        const std::string& downloadId) {
+                        const std::string& downloadId, std::optional<bool> hardLinks) {
     InstallPlan plan;
     plan.titleId = titleId;
     plan.modStore = paths.mods() / titleId / downloadId;
@@ -303,14 +303,26 @@ InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, cons
         if (plan.mapping.size() >= 200) break;
         plan.mapping.emplace_back(file.archivePath, plan.backportDirectory + "/" + file.installPath);
     }
+    std::string overlayStep = "Create " + plan.overlayNext.string();
+    if (hardLinks == true) {
+        overlayStep += " with hard links to those files and to the other enabled mods of this game, in load order. "
+                       "Links need no extra space.";
+    } else if (hardLinks == false) {
+        plan.overlayExtraBytes = plan.bytes;
+        overlayStep += " with copies of those files and of the other enabled mods of this game, in load order. Hard "
+                       "links do not work in Akeno's folder on this console, so this needs another " +
+                       strings::formatBytes(plan.bytes) + ".";
+    } else {
+        plan.overlayExtraBytes = plan.bytes;
+        overlayStep += " from those files and the other enabled mods of this game, in load order: hard links where "
+                       "the console supports them, otherwise copies (up to " +
+                       strings::formatBytes(plan.bytes) + " more).";
+    }
     plan.steps = {
         {"Keep the mod's files",
          strings::concat("Copy ", plan.files, " files (", strings::formatBytes(plan.bytes), ") into ",
                          plan.modStore.string(), ".")},
-        {"Build the overlay",
-         "Create " + plan.overlayNext.string() +
-             " with hard links to those files and to the other enabled mods of this game, in load order. No extra space "
-             "is needed for links."},
+        {"Build the overlay", overlayStep},
         {"Check the overlay",
          "Only plain files and folders; no fakelib or system folders; every file matches its SHA-256; within "
          "ShadowMountPlus limits."},

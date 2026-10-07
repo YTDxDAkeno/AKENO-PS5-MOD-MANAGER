@@ -117,7 +117,8 @@ TEST_CASE("full system check with a healthy (mocked) environment") {
     std::string text = report.toText();
     CHECK(text.find("SAFE MODE: ON") != std::string::npos);
     CHECK(text.find("Installation: NOT YET IMPLEMENTED") != std::string::npos);
-    CHECK(text.find("NOT tested on PS5 hardware") != std::string::npos);
+    CHECK(text.find("Testing status: unit tested on the host") != std::string::npos);
+    CHECK(text.find("not hardware tested") != std::string::npos);
 }
 
 TEST_CASE("system check reports ShadowMount and database failures with reasons") {

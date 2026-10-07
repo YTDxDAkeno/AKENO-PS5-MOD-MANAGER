@@ -75,6 +75,8 @@ struct SystemReport {
     std::string platformName;
     std::vector<CheckResult> checks;
     FeatureAvailability features;
+    // Whether hard links work in Akeno's storage (decides links or copies for overlays).
+    std::optional<bool> hardLinksSupported;
 
     const CheckResult* find(CheckId id) const;
     std::string toText() const;
@@ -112,6 +114,7 @@ public:
 
 private:
     SystemCheckDependencies deps_;
+    std::optional<bool> hardLinks_;
 };
 
 }  // namespace akeno::app

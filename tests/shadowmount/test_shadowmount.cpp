@@ -192,3 +192,32 @@ TEST_CASE("provider discovers games end to end over the mock") {
     CHECK(games->size() == 4);
     CHECK((*games)[0].titleId == "PPSA01234");
 }
+
+TEST_CASE("a ShadowMountPlus without game versions (1.7beta4) is completed from param.json") {
+    test::TempDir dir;
+    const auto folder = dir.path() / "Some Game";
+    std::filesystem::create_directories(folder / "sce_sys");
+    test::writeText(folder / "sce_sys" / "param.json", R"({"titleId":"PPSA28000","contentVersion":"01.005.000"})");
+    // Like 1.7beta4: no "version" key at all.
+    const std::string games = R"({"status":0,"count":2,"size_included":false,"games":[
+        {"path":")" + folder.string() + R"(","runtime_path":")" + folder.string() + R"(","source_type":"folder",
+         "image_type":"","platform":"ps5","title_id":"PPSA28000","content_id":"","title_name":"Without version",
+         "last_access_time":"","install_time":"","icon_url":"","app_db_size_bytes":0,"installed":true,"managed":true,
+         "mounted":false,"image_backed":false,"source_available":true,"installed_pkg":false},
+        {"path":"/data/homebrew/PPSA90001","runtime_path":"","source_type":"folder","image_type":"","platform":"ps5",
+         "title_id":"PPSA90001","content_id":"","title_name":"With version","version":"01.011.000",
+         "last_access_time":"","install_time":"","icon_url":"","app_db_size_bytes":0,"installed":true,"managed":true,
+         "mounted":false,"image_backed":false,"source_available":true,"installed_pkg":false}]})";
+    test::MockHttpClient http;
+    http.respond(HttpMethod::Post, kBase + "/api/v1/version", 200, test::readFixture("shadowmount/version.json"));
+    http.respond(HttpMethod::Post, kBase + "/api/v1/games", 200, games);
+    ShadowMountGameProvider provider(ShadowMountClient::create(http, Endpoint{}).value());
+    provider.setAppmetaBase(dir.path() / "appmeta");
+    auto list = provider.discoverGames();
+    REQUIRE(list.ok());
+    REQUIRE(list->size() == 2);
+    CHECK((*list)[0].version == "01.005.000");
+    CHECK((*list)[0].versionSource == (folder / "sce_sys" / "param.json").string());
+    CHECK((*list)[1].version == "01.011.000");
+    CHECK((*list)[1].versionSource == "ShadowMountPlus");
+}

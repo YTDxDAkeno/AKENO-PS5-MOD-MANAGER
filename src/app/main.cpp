@@ -50,7 +50,9 @@ int main(int argc, char* argv[]) {
         case app::RunMode::DownloadTest: {
             app::DownloadTestSpec spec = app::builtinDownloadTest();
             if (commandLine.downloadTestUrl) {
-                spec = {*commandLine.downloadTestUrl, *commandLine.downloadTestSha256, *commandLine.downloadTestSize};
+                spec.url = *commandLine.downloadTestUrl;
+                spec.sha256 = *commandLine.downloadTestSha256;
+                spec.size = *commandLine.downloadTestSize;
             }
             exitCode = app::runDownloadTest(*context.value(), spec);
             break;

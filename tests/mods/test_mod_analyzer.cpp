@@ -177,3 +177,17 @@ TEST_CASE("the dry-run plan describes an overlay and never the game files") {
     CHECK(planInstall(blocked, paths, "PPSA90001", "0123456789abcdef").notExecutableReason.find("problems") !=
           std::string::npos);
 }
+
+TEST_CASE("the plan uses copies when hard links do not work") {
+    AppPaths paths{"/data/akeno-mod-manager"};
+    ModAnalysis analysis = analyzeMod(input({file("Content/a.pak", "x", 3000)}));
+    auto links = planInstall(analysis, paths, "PPSA90001", "0123456789abcdef", true);
+    CHECK(links.overlayExtraBytes == 0);
+    CHECK(links.steps[1].detail.find("hard links") != std::string::npos);
+    auto copies = planInstall(analysis, paths, "PPSA90001", "0123456789abcdef", false);
+    CHECK(copies.overlayExtraBytes == 3000);
+    CHECK(copies.steps[1].detail.find("copies") != std::string::npos);
+    CHECK(copies.steps[1].detail.find("3.0 KB") != std::string::npos);
+    auto unknown = planInstall(analysis, paths, "PPSA90001", "0123456789abcdef");
+    CHECK(unknown.overlayExtraBytes == 3000);
+}

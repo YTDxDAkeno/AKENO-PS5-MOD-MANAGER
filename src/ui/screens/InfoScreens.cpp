@@ -55,11 +55,15 @@ void AboutScreen::render(ICanvas& canvas, UiEnv& env) {
                     {content.x, content.y + 70, content.w, 44},
                     TextStyle{FontRole::Body, theme::kAccent, TextAlign::Left, false});
 
-    const Rect status{content.x, content.y + 130, content.w, 96};
+    // The testing status can need up to three lines; the rows below move with it.
+    const std::string statusText = "Testing status: " + about.testingStatus;
+    const int statusLines = std::clamp(
+        static_cast<int>(wrapText(canvas, statusText, content.w - 80, FontRole::Body, false).size()), 1, 3);
+    const Rect status{content.x, content.y + 130, content.w, statusLines * 40 + 40};
     draw::panel(canvas, status);
     canvas.fillRoundedRect({status.x, status.y, 10, status.h}, 5, theme::kWarning);
-    canvas.drawText("Testing status: " + about.testingStatus, {status.x + 40, status.y, status.w - 80, status.h},
-                    TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, true});
+    drawWrappedText(canvas, statusText, {status.x + 40, status.y + 20, status.w - 80, statusLines * 40},
+                    TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, false}, 40, 3);
 
     std::vector<std::pair<std::string, std::string>> rows{
         {"Platform", about.platformName},
@@ -73,7 +77,7 @@ void AboutScreen::render(ICanvas& canvas, UiEnv& env) {
                      "SQLite, nlohmann/json, DejaVu fonts"},
         {"Notices", "See THIRD_PARTY_NOTICES.md in the source repository."},
     };
-    int y = content.y + 256;
+    int y = status.bottom() + 30;
     const int first = std::min(scroll_, static_cast<int>(rows.size()) - 1);
     for (int i = first; i < static_cast<int>(rows.size()); ++i) {
         canvas.drawText(rows[static_cast<std::size_t>(i)].first, {content.x, y, 300, 44},

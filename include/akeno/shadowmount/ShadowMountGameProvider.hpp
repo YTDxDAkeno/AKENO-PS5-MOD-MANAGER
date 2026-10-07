@@ -4,6 +4,7 @@
 #include <mutex>
 #include <optional>
 
+#include "akeno/games/ParamJson.hpp"
 #include "akeno/games/IGameDiscoveryProvider.hpp"
 #include "akeno/shadowmount/ShadowMountClient.hpp"
 
@@ -21,6 +22,8 @@ public:
     Result<std::string> loadIcon(const games::GameInfo& game, games::IconSize size) override;
 
     ShadowMountClient& client() noexcept { return client_; }
+    // Where the system keeps a copy of each title's param.json (tests point it elsewhere).
+    void setAppmetaBase(std::filesystem::path base) { appmetaBase_ = std::move(base); }
 
 private:
     Result<VersionInfo> ensureVersion();
@@ -28,6 +31,7 @@ private:
     std::mutex mutex_;
     ShadowMountClient client_;
     std::optional<VersionInfo> version_;
+    std::filesystem::path appmetaBase_{std::string(games::kDefaultAppmetaBase)};
 };
 
 }  // namespace akeno::shadowmount

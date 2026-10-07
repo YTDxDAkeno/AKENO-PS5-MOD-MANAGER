@@ -17,19 +17,22 @@ upgraded without evidence.
 
 | Component | compiled | unit tested | mock tested | hardware tested |
 |---|---|---|---|---|
-| Core (paths, guard, logging, database, JSON) | ✓ host + PS5 | ✓ | – | ✗ |
-| HTTPS client (libcurl) | ✓ host + PS5 | ✓ (loopback server) | – | ✗ |
-| ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✗ |
-| System check / Safe Mode | ✓ host + PS5 | ✓ | ✓ | ✗ |
+| Core (paths, guard, logging, database, JSON) | ✓ host + PS5 | ✓ | – | partly: database created and migrated (schema v3), logs written, 2026-10-07 |
+| HTTPS client (libcurl) | ✓ host + PS5 | ✓ (loopback server) | – | partly: certificate check with the embedded CA bundle, 2026-10-07; no download yet (see log) |
+| ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✓ 2026-10-07 (1.7beta4); game versions from `param.json` added afterwards, **not hardware tested** |
+| System check / Safe Mode | ✓ host + PS5 | ✓ | ✓ | ✓ 2026-10-07 (12.20) |
 | User interface | ✓ host + PS5 | ✓ (screen logic) | ✓ (desktop, offscreen) | ✗ |
 | Akeno Catalogue provider, compatibility labels | ✓ host + PS5 | ✓ (fixtures) | ✓ (mock server, real HTTP client) | ✗ |
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
-| Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | ✗ |
+| Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | ✗ (first try failed on a wrong test address, fixed) |
 | Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | ✗ |
 | Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | ✗ |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
-| Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | ✗ |
+| Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | firmware detection ✓ 2026-10-07; notifications ✗ (not reported) |
+
+"Partly" and "✓" refer to one run on one console. Nothing here is **verified**
+yet (that needs a repeated, reproducible result after changes).
 
 ## Mod compatibility labels
 
@@ -61,4 +64,26 @@ Result: <what happened, including anything unexpected>
 Logs: <attached system-check / games / akeno.log>
 ```
 
-*No entries yet.*
+### 2026-10-07 - repository owner - Akeno 0.1.0-alpha (e67584ad1c8f)
+Console: PS5, firmware 12.20
+Environment: homebrew environment with `/data/homebrew` and `/data/shadowmount`, ShadowMountPlus 1.7beta4 (HTTP API v1), payload loader not recorded
+Steps (docs/safety-model.md §9): `AkenoSelfCheck.elf` (steps 1 to 6: system check, game list, download test)
+Result:
+* System check: firmware read as 12.20; homebrew environment detected, `/data` writable;
+  ShadowMountPlus 1.7beta4 detected and its API connected (v1); 127 GB free in
+  `/data/akeno-mod-manager`; HTTPS to raw.githubusercontent.com with certificate
+  verification worked (HTTP 301); SQLite database created with schema v3. Safe Mode ON,
+  installation "not yet implemented", as designed.
+* Game list: 14 games reported by ShadowMountPlus (13 folder games, 1 installed package).
+  **Every version was "unknown":** ShadowMountPlus 1.7beta4 does not send a `version` field
+  (it was added later, in commit `4cde42a`). Fixed afterwards: Akeno reads `contentVersion`
+  from the game's `sce_sys/param.json` or `/user/appmeta/<TITLE_ID>/param.json` when
+  ShadowMountPlus reports no version. Not re-tested yet.
+* Download test: **failed with HTTP 404.** The built-in test address pointed at a branch
+  named `main`, which this repository does not have. Fixed afterwards: the test file and the
+  default catalogue are read from the repository's default branch (`HEAD`). Not re-tested yet.
+* Overlay probe: **hard links do not work** in `/data/akeno-mod-manager/staging` (reason not
+  recorded by this build; later builds log it). Phase 5 must therefore build overlays from
+  copies, which need as much free space again as the mod; the dry-run plan says so.
+* Nothing outside `/data/akeno-mod-manager` was written; the test file was deleted.
+Logs: system-check, games, download-test and akeno.log (not published: they contain the tester's game list)

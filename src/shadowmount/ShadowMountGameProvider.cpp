@@ -11,6 +11,7 @@ games::GameInfo toGameInfo(const Game& game) {
     info.titleId = game.titleId;
     info.name = game.titleName.empty() ? game.titleId : game.titleName;
     info.version = game.version;
+    if (!info.version.empty()) info.versionSource = "ShadowMountPlus";
     info.contentId = game.contentId;
     if (game.platform == "ps5") {
         info.platform = games::Platform::Ps5;
@@ -101,8 +102,22 @@ Result<std::vector<games::GameInfo>> ShadowMountGameProvider::discoverGames() {
     }
     std::vector<games::GameInfo> result;
     result.reserve(list->games.size());
+    std::size_t fromParamJson = 0;
     for (const auto& game : list->games) {
-        result.push_back(toGameInfo(game));
+        games::GameInfo info = toGameInfo(game);
+        // ShadowMountPlus 1.7beta4 and older send no version; read the game's own param.json.
+        if (info.version.empty() && info.platform == games::Platform::Ps5) {
+            if (auto found = games::readInstalledVersion(info, appmetaBase_)) {
+                info.version = found->version;
+                info.versionSource = found->source.string();
+                ++fromParamJson;
+            }
+        }
+        result.push_back(std::move(info));
+    }
+    if (fromParamJson > 0) {
+        logging::logger().info("shadowmount", strings::concat("read ", fromParamJson,
+                                                               " game versions from param.json"));
     }
     return result;
 }

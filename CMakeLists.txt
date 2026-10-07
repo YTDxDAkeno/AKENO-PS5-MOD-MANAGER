@@ -101,6 +101,7 @@ add_library(akeno_core STATIC
     src/database/SettingsStore.cpp
     src/games/GameInfo.cpp
     src/games/GameLibrary.cpp
+    src/games/ParamJson.cpp
     src/shadowmount/ShadowMountClient.cpp
     src/shadowmount/ShadowMountGameProvider.cpp
     src/mods/Catalog.cpp

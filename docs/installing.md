@@ -29,7 +29,7 @@ sha256sum -c SHA256SUMS
 It reads system state, ShadowMountPlus's version and game list, and writes
 reports. When the network check passes, it also downloads a 276-byte
 harmless test archive (`assets/test/download-test.zip` from this repository's
-`main` branch) through the download engine, checks its SHA-256, unpacks it into
+default branch) through the download engine, checks its SHA-256, unpacks it into
 Akeno's staging folder, analyses it, deletes the staging folder, describes the
 (not executed) install plan and deletes the download again.
 
@@ -47,8 +47,8 @@ Akeno's staging folder, analyses it, deletes the staging folder, describes the
 
 This covers steps 1–9 of the testing ladder in
 [safety-model.md](safety-model.md#9-testing-ladder-on-real-hardware).
-The test file is published with the `main` branch; a build made before it
-was merged reports *HTTP 404* for that step.
+Builds from before 2026-10-07 15:00 UTC looked for the test file on a branch
+named `main`, which does not exist, and report *HTTP 404* for that step.
 
 ## Installing the user interface
 

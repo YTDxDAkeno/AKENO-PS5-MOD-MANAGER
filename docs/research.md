@@ -83,7 +83,7 @@ Routes Akeno needs (read-only unless noted):
 | Route | Use in Akeno |
 | --- | --- |
 | `POST /api/v1/version` | Detection, version, `capabilities[]` for capability-based gating |
-| `POST /api/v1/games` | Game discovery: `title_id`, `title_name`, `version`, `content_id`, `platform`, `path`, `runtime_path`, `source_type` (`folder`/`image`/`pkg`), `mounted`, `installed_pkg`, `icon_url`, … |
+| `POST /api/v1/games` | Game discovery: `title_id`, `title_name`, `version`, `content_id`, `platform`, `path`, `runtime_path`, `source_type` (`folder`/`image`/`pkg`), `mounted`, `installed_pkg`, `icon_url`, … **Correction (hardware test 2026-10-07):** the released 1.7beta4 sends no `version`; the field exists only from commit `4cde42a` (the revision read above). Akeno falls back to the game's `param.json` (`docs/shadowmount.md` §3). |
 | `GET /api/v1/games/icon?title_id=…[&size=thumb]` | Game icon PNG (full or cached 128×128) |
 | `POST /api/v1/storage` | Free space per mounted filesystem |
 | `POST /api/v1/settings` | Custom scan paths (needed for backport precedence, Phase 5) |
@@ -126,6 +126,9 @@ it a *backport*. From the source:
   could change the stored mod. **Mitigation:** Akeno records per-file
   SHA-256 for every installed mod and re-verifies sources before every
   overlay rebuild. The overlay mode is a setting (`hardlink` / `copy`).
+  **Hardware test 2026-10-07 (12.20):** hard links did not work in
+  `/data/akeno-mod-manager/staging`, so copies are the expected mode; they
+  also avoid the shared-inode problem described here.
 * **Lifecycle:** with the default `persistent_image_mounts=0`, layers are
   mounted when a game starts and released after it exits. Akeno must never
   swap an overlay while the title is mounted or running (`mounted` field;

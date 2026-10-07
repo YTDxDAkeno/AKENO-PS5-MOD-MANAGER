@@ -39,7 +39,7 @@ explanation, rather than guessing at a new schema.
 | --- | --- | --- |
 | `titleId` | `title_id` | Validated `^[A-Z]{4}[0-9]{5}$`. Invalid entries are skipped and logged. |
 | `name` | `title_name` | Falls back to the title ID |
-| `version` | `version` | `CONTENT_VERSION` (PS5) / `APP_VER` (PS4). May be empty, shown as "unknown" |
+| `version` | `version` | `CONTENT_VERSION` (PS5) / `APP_VER` (PS4). **Missing in 1.7beta4** (added in commit `4cde42a`); then Akeno reads it from `param.json`, see below. Otherwise shown as "unknown" |
 | `contentId` | `content_id` | |
 | `platform` | `platform` | `ps5` / `ps4` / `unknown` |
 | `sourceType` | `source_type` | `folder` / `image` / `pkg` |
@@ -48,6 +48,19 @@ explanation, rather than guessing at a new schema.
 | `mounted` | `mounted` | Used to block overlay swaps while mounted |
 | `installedPkg` | `installed_pkg` | Selects the redirect-limit rule |
 | icon | `GET /api/v1/games/icon?title_id=<validated id>` | Akeno builds this URL from the validated ID instead of following `icon_url` |
+
+**Game version fallback.** ShadowMountPlus 1.7beta4 (hardware test 2026-10-07)
+sends no `version` field, so every game showed "version unknown". When the
+field is missing or empty for a PS5 game, Akeno reads `contentVersion` from the
+first readable of:
+
+1. `<path>/sce_sys/param.json` (folder games only),
+2. `<runtime_path>/sce_sys/param.json`,
+3. `/user/appmeta/<TITLE_ID>/param.json`.
+
+Only absolute paths without `..` are read, at most 1 MiB (SMP's own limit), and
+the value must look like a version (`01.000.000`). The source is shown in the
+game list. Nothing is written. A version from ShadowMountPlus always wins.
 
 ## 4. The overlay: SMP backports
 
@@ -90,7 +103,10 @@ over the game at launch:
 4. **Building.** The merged tree is built in
    `/data/akeno-mod-manager/overlays/<TITLE_ID>/overlay.next/`. Regular
    files only. Hard links from `mods/` when the filesystem supports them
-   (detected at startup), copies otherwise. Source files are verified
+   (detected at startup), copies otherwise. **On the first test console
+   (firmware 12.20) hard links did not work in Akeno's folder**, so copies
+   are the expected case: an installed mod then needs its size twice (stored
+   copy and overlay). The dry-run plan states the extra space. Source files are verified
    against their recorded SHA-256 before linking. A game write through a
    read-write unionfs could have changed them.
 5. **Validation before activation:**
@@ -124,6 +140,9 @@ over the game at launch:
 
 ## 5. Open questions for hardware testing
 
+* Why does `link()` fail in `/data/akeno-mod-manager/staging` on 12.20
+  (first hardware test)? Builds after 2026-10-07 log the error. If hard
+  links stay unavailable, the question below is moot and overlays use copies.
 * Does a hard-linked file in the backport behave identically to a regular
   file for both unionfs and NSFS redirects?
 * Does the PS5 build of the first target game (Stellar Blade) load

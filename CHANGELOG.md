@@ -9,7 +9,20 @@ anything.
 First development release: **Phase 0 (research), Phase 1 (safe game browser),
 Phase 2 (online mod browser), Phase 3 (download engine) and Phase 4 (mod check:
 secure extraction, analysis, dry run)**. Compiled and unit tested on a Linux host.
-**Not tested on PS5 hardware.**
+First partial hardware test on 2026-10-07 (firmware 12.20, ShadowMountPlus
+1.7beta4): system check and game list only. Downloads, mod checks and the user
+interface are **not hardware tested**.
+
+### Fixed after the first hardware test
+- The download test and the default catalogue pointed at a branch named `main`,
+  which the repository does not have (HTTP 404). They now use the default
+  branch (`HEAD`); a stored old default is moved to the new one.
+- Game versions were "unknown" with ShadowMountPlus 1.7beta4, which does not
+  send them. Akeno now reads `contentVersion` from the game's `param.json`
+  (game folder, runtime folder or `/user/appmeta`) and shows where it came from.
+- The hard-link probe now records why links fail; the system check exposes the
+  result, and the dry-run plan counts the extra space overlay copies would need.
+- The built-in testing status describes the partial hardware test.
 
 ### Added
 - Research notes on ShadowMountPlus 1.7, the PS5 payload SDK, pacbrew libraries,

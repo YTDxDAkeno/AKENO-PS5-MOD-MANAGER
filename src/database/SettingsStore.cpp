@@ -109,7 +109,9 @@ Result<SettingsLoadResult> SettingsStore::load() {
         }
     }
     if (auto it = stored.find(std::string(kCatalogueUrl)); it != stored.end()) {
-        if (isValidCatalogueUrl(it->second)) {
+        if (it->second == kLegacyDefaultCatalogueUrl) {
+            s.catalogueUrl = std::string(kDefaultCatalogueUrl);  // the old default follows the new one
+        } else if (isValidCatalogueUrl(it->second)) {
             s.catalogueUrl = it->second;
         } else {
             reject(kCatalogueUrl);

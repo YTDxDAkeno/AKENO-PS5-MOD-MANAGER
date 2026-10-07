@@ -24,6 +24,7 @@ struct GameInfo {
     std::string titleId;
     std::string name;
     std::string version;        // may be empty when the game does not report one
+    std::string versionSource;  // where the version came from ("ShadowMountPlus", a param.json path)
     std::string contentId;
     Platform platform = Platform::Unknown;
     SourceType sourceType = SourceType::Unknown;

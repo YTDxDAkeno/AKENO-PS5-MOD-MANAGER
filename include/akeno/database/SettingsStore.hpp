@@ -13,7 +13,11 @@ namespace akeno::database {
 
 enum class LibrarySort { Name, TitleId, RecentlyPlayed };
 
+// "HEAD" is the repository's default branch, whatever it is called.
 inline constexpr std::string_view kDefaultCatalogueUrl =
+    "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/HEAD/catalog/";
+// Earlier builds stored this default, which only works if a branch named "main" exists.
+inline constexpr std::string_view kLegacyDefaultCatalogueUrl =
     "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/main/catalog/";
 
 // https:// anywhere, or http:// to a loopback address (local development).

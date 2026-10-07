@@ -80,7 +80,7 @@ Result<ModCheckReport> loadReport(const AppPaths& paths, const std::string& down
 std::vector<ModCheckReport> loadReportsForTitle(const AppPaths& paths, const std::string& titleId,
                                                 const std::string& excludeId);
 // Adds conflicts with the other checked mods of the same game, and the install plan.
-void completeReport(ModCheckReport& report, const AppPaths& paths);
+void completeReport(ModCheckReport& report, const AppPaths& paths, std::optional<bool> hardLinks = std::nullopt);
 
 std::string_view toString(providers::CompatibilityStatus status) noexcept;
 std::optional<providers::CompatibilityStatus> parseCompatibilityStatus(std::string_view text) noexcept;

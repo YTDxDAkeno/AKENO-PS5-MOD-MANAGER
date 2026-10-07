@@ -10,7 +10,9 @@ std::string_view target() { return "@AKENO_TARGET_NAME@"; }
 std::string_view compiler() { return "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@"; }
 
 std::string_view testingStatus() {
-    return "compiled and unit tested on the host; NOT tested on PS5 hardware";
+    // Keep in step with docs/compatibility.md.
+    return "unit tested on the host; on a PS5 (firmware 12.20) only the system check and the game list were "
+           "tried so far; downloads, mod checks and the user interface are not hardware tested";
 }
 
 }  // namespace akeno::build

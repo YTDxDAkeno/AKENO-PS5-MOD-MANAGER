@@ -19,6 +19,7 @@ add_executable(akeno_tests
     database/test_migrations.cpp
     database/test_settings.cpp
     games/test_games.cpp
+    games/test_param_json.cpp
     shadowmount/test_shadowmount.cpp
     mods/test_catalog.cpp
     compatibility/test_compatibility_rules.cpp

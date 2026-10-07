@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "akeno/app/AppContext.hpp"
@@ -27,8 +28,9 @@ struct DownloadTestSpec {
     std::string url;
     std::string sha256;
     std::uint64_t size = 0;
+    std::optional<bool> hardLinks;  // from the system check; decides links or copies in the plan
 };
-// The file in this repository (assets/test/download-test.zip), as published on the main branch.
+// The file in this repository (assets/test/download-test.zip), from its default branch.
 DownloadTestSpec builtinDownloadTest();
 int runDownloadTest(AppContext& context, const DownloadTestSpec& spec);
 

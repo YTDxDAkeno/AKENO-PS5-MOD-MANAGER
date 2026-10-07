@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/app/SystemCheck.hpp"
 
+#include <cerrno>
+
 #include <system_error>
 
 #include <sys/stat.h>
@@ -284,16 +286,28 @@ CheckResult SystemChecker::checkOverlayCapability(const CheckResult& shadowMount
     const fs::path b = deps_.paths.staging() / "link-probe-b";
     (void)deps_.fs->removeFile(a);
     (void)deps_.fs->removeFile(b);
+    // Records why a probe failed, so a hardware report shows the cause, not only the result.
     bool hardLinks = false;
-    if (deps_.fs->writeFileAtomic(a, "probe")) {
-        if (deps_.fs->createHardLink(a, b)) {
-            struct stat info {};
-            hardLinks = ::lstat(b.c_str(), &info) == 0 && info.st_nlink == 2;
+    std::string why;
+    auto written = deps_.fs->writeFileAtomic(a, "probe");
+    if (!written) {
+        why = "could not write the probe file: " + written.error().describe();
+    } else if (auto linked = deps_.fs->createHardLink(a, b); !linked) {
+        why = "link() failed: " + linked.error().describe();
+    } else {
+        struct stat info {};
+        if (::lstat(b.c_str(), &info) != 0) {
+            why = strings::concat("the link cannot be read back (errno ", errno, ")");
+        } else if (info.st_nlink != 2) {
+            why = strings::concat("the link count is ", info.st_nlink, " instead of 2");
+        } else {
+            hardLinks = true;
         }
     }
     (void)deps_.fs->removeFile(a);
     (void)deps_.fs->removeFile(b);
-    facts = strings::concat("hard links in app storage: ", hardLinks ? "supported" : "not supported",
+    hardLinks_ = hardLinks;
+    facts = strings::concat("hard links in app storage: ", hardLinks ? "supported" : "not supported (" + why + ")",
                             "; ShadowMount API: ", shadowMountApi.status == CheckStatus::Ok ? "connected" : "unavailable");
     if (!deps_.build.installation) {
         return make(CheckId::OverlayCapability, label, CheckStatus::Warning, "not implemented in this build (Phase 5)",
@@ -326,6 +340,7 @@ SystemReport SystemChecker::run(const std::function<void(const CheckResult&)>& o
     add(checkDatabase());
     add(checkOverlayCapability(*report.find(CheckId::ShadowMountApi)));
     report.features = computeFeatures(report.checks, deps_.build);
+    report.hardLinksSupported = hardLinks_;
     logging::logger().info("syscheck", strings::concat("safe mode: ", report.features.safeMode() ? "ON" : "OFF"));
     return report;
 }

@@ -34,7 +34,9 @@ int main(int argc, char* argv[]) {
     // Ladder steps 5 and 6, only when the network check passed.
     const app::CheckResult* network = report.find(app::CheckId::Networking);
     if (network != nullptr && network->status == app::CheckStatus::Ok) {
-        (void)app::runDownloadTest(*context.value(), app::builtinDownloadTest());
+        app::DownloadTestSpec spec = app::builtinDownloadTest();
+        spec.hardLinks = report.hardLinksSupported;
+        (void)app::runDownloadTest(*context.value(), spec);
     }
     logging::logger().flush();
     return exitCode;

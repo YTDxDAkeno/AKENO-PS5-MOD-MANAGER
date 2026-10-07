@@ -3,6 +3,7 @@
 
 #include "TestSupport.hpp"
 #include "UiTestSupport.hpp"
+#include "akeno/core/BuildInfo.hpp"
 #include "akeno/ui/Screens.hpp"
 
 using namespace akeno;
@@ -330,11 +331,15 @@ TEST_CASE("log viewer shows records and exports diagnostics") {
 TEST_CASE("about screen states the testing status") {
     test::UiHarness h;
     h.state.about.version = "0.1.0-alpha";
-    h.state.about.testingStatus = "compiled and unit tested on the host; NOT tested on PS5 hardware";
+    h.state.about.testingStatus = std::string(build::testingStatus());
     AboutScreen screen;
     test::RecordingCanvas canvas;
     screen.render(canvas, h.env);
-    CHECK(canvas.hasText("NOT tested on PS5 hardware"));
+    // Wrapped over several lines, but complete: the lines joined give the whole text.
+    std::string joined;
+    for (const auto& text : canvas.texts) joined += text + " ";
+    CHECK(joined.find("Testing status: " + h.state.about.testingStatus) != std::string::npos);
+    CHECK_FALSE(canvas.hasText(h.state.about.testingStatus));  // not on a single line
 }
 
 TEST_CASE("toasts expire") {
