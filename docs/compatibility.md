@@ -122,3 +122,16 @@ Result:
   own leftover entries in staging (`check-*`, `link-probe-*`) and logs each one.
 * Hard links: `link()` still fails with `ENOENT`; overlays will use copies.
 Logs: akeno.log and download-test (not published)
+
+### 2026-10-07 - repository owner - Akeno 0.1.0-alpha (2fff9384ba1a)
+Console: PS5, firmware 12.20
+Environment: as in the previous entries
+Steps (docs/safety-model.md §9): `AkenoSelfCheck.elf`, **steps 1 to 9 all passed**
+Result:
+* At start Akeno removed the one leftover staging entry of the second run and logged it.
+* System check OK (Safe Mode ON as designed); 14 games with all 14 versions; download of the
+  test file (326 ms, SHA-256 matched); unpacking; **staging deleted again**; analysis (1 file,
+  0 findings); dry-run plan with copies (hard links still fail with `ENOENT`); test file deleted.
+* Not covered: the user interface (`AkenoModManager-homebrew.zip`), real mods, resume/retry.
+Logs: akeno.log, system-check, games, download-test (not published)
+
