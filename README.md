@@ -6,9 +6,9 @@
 > browser)**, **Phase 2 (an online mod browser for the Akeno Catalogue)**, **Phase 3 (verified
 > downloads)** and **Phase 4 (secure unpacking, analysis and a dry-run install plan)**. It
 > **does not install mods yet**, and it **never modifies game files**.
-> It has been **compiled and unit tested on a Linux host**. On PS5 hardware, only the headless
-> system check and the game list have been tried, once, on firmware 12.20 with ShadowMountPlus
-> 1.7beta4; downloads, mod checks and the user interface are **not hardware tested**.
+> It has been **compiled and unit tested on a Linux host**. On PS5 hardware (firmware 12.20,
+> ShadowMountPlus 1.7beta4) the headless system check, the game list and one small test download
+> with unpacking have been tried; the user interface and real mods are **not hardware tested**.
 > Do not read anything in this repository as "works on firmware 12.20" beyond what the
 > [hardware test log](docs/compatibility.md#hardware-test-log) records.
 
@@ -70,7 +70,7 @@ Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 
 | Firmware | Status |
 |---|---|
-| 12.20 (initial target) | **partly tested** (2026-10-07): system check, ShadowMountPlus 1.7beta4 API, game list, HTTPS and database worked; the download test failed on a wrong test address (fixed, not re-tested). See the [log](docs/compatibility.md#hardware-test-log) |
+| 12.20 (initial target) | **partly tested** (2026-10-07): system check, ShadowMountPlus 1.7beta4 API, game list with versions, HTTPS, database, and one test download with unpacking worked; cleaning up the staging folder failed (fixed, not re-tested). See the [log](docs/compatibility.md#hardware-test-log) |
 | any other | not tested |
 
 Firmware is shown for information only. Akeno enables features from
@@ -198,8 +198,8 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 0 | Research ([docs/research.md](docs/research.md)) | done |
 | 1 | Safe game browser | implemented; system check and game list partly hardware tested (12.20) |
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
-| 3 | Download engine | implemented (not hardware tested) |
-| 4 | Mod analyser, secure extraction, dry run | implemented (not hardware tested) |
+| 3 | Download engine | implemented; one test download hardware tested (12.20) |
+| 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20), staging cleanup fixed but not re-tested |
 | 5 | ShadowMountPlus overlay, rollback, Vanilla | planned |
 | 6 | Load order, profiles, dependencies | planned |
 | 7 | Nexus Mods, mod.io | planned |

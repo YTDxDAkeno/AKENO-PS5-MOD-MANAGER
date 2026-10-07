@@ -18,16 +18,16 @@ upgraded without evidence.
 | Component | compiled | unit tested | mock tested | hardware tested |
 |---|---|---|---|---|
 | Core (paths, guard, logging, database, JSON) | ✓ host + PS5 | ✓ | – | partly: database created and migrated (schema v3), logs written, 2026-10-07 |
-| HTTPS client (libcurl) | ✓ host + PS5 | ✓ (loopback server) | – | partly: certificate check with the embedded CA bundle, 2026-10-07; no download yet (see log) |
-| ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✓ 2026-10-07 (1.7beta4); game versions from `param.json` added afterwards, **not hardware tested** |
+| HTTPS client (libcurl) | ✓ host + PS5 | ✓ (loopback server) | – | ✓ 2026-10-07: certificate check with the embedded CA bundle, one download from GitHub |
+| ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✓ 2026-10-07 (1.7beta4), including game versions from `param.json` (14 of 14) |
 | System check / Safe Mode | ✓ host + PS5 | ✓ | ✓ | ✓ 2026-10-07 (12.20) |
 | User interface | ✓ host + PS5 | ✓ (screen logic) | ✓ (desktop, offscreen) | ✗ |
 | Akeno Catalogue provider, compatibility labels | ✓ host + PS5 | ✓ (fixtures) | ✓ (mock server, real HTTP client) | ✗ |
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
-| Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | ✗ (first try failed on a wrong test address, fixed) |
-| Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | ✗ |
-| Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | ✗ |
+| Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | partly: one small file downloaded and verified, 2026-10-07; resume and retries not hardware tested |
+| Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | partly: the one-file test archive unpacked, 2026-10-07; deleting the staging folder failed silently, fixed afterwards, **not re-tested** |
+| Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | partly: the test archive analysed and planned (copies), 2026-10-07 |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | firmware detection ✓ 2026-10-07; notifications ✗ (not reported) |
 
@@ -87,3 +87,23 @@ Result:
   copies, which need as much free space again as the mod; the dry-run plan says so.
 * Nothing outside `/data/akeno-mod-manager` was written; the test file was deleted.
 Logs: system-check, games, download-test and akeno.log (not published: they contain the tester's game list)
+
+### 2026-10-07 - repository owner - Akeno 0.1.0-alpha (48d30bc0d009)
+Console: PS5, firmware 12.20
+Environment: as in the previous entry (ShadowMountPlus 1.7beta4, HTTP API v1)
+Steps (docs/safety-model.md §9): `AkenoSelfCheck.elf` (steps 1 to 9)
+Result:
+* System check: as before, all OK; Safe Mode ON as designed.
+* Game list: 14 games, **all 14 versions read** from `param.json` (13 from the game folder's
+  `sce_sys/param.json`, the installed package from `/user/appmeta/<TITLE_ID>/param.json`).
+* Download test: **passed.** 276 bytes from raw.githubusercontent.com, SHA-256 matched (433 ms).
+* Check: the archive was unpacked into staging and analysed (1 file, 0 findings), and the dry-run
+  plan used copies. **But the staging folder was not empty afterwards**, although deleting it
+  reported no error, so the step failed. Fixed afterwards: folders are deleted with plain
+  `lstat`/`opendir`/`unlink`/`rmdir` calls instead of `std::filesystem::remove_all`, and the
+  result is checked; the test report now lists anything left in staging. Not re-tested yet.
+* Hard links: `link()` fails with `ENOENT` ("No such file or directory") for
+  `/data/akeno-mod-manager/staging/link-probe-b`, although the folder and the source file exist.
+  Cause unknown; overlays will use copies.
+* The test file was deleted. Nothing outside `/data/akeno-mod-manager` was written.
+Logs: system-check, games, download-test and akeno.log (not published)

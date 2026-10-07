@@ -10,8 +10,8 @@ First development release: **Phase 0 (research), Phase 1 (safe game browser),
 Phase 2 (online mod browser), Phase 3 (download engine) and Phase 4 (mod check:
 secure extraction, analysis, dry run)**. Compiled and unit tested on a Linux host.
 First partial hardware test on 2026-10-07 (firmware 12.20, ShadowMountPlus
-1.7beta4): system check and game list only. Downloads, mod checks and the user
-interface are **not hardware tested**.
+1.7beta4): system check, game list and one test download with unpacking. The user
+interface and real mods are **not hardware tested**.
 
 ### Fixed after the first hardware test
 - The download test and the default catalogue pointed at a branch named `main`,
@@ -23,6 +23,10 @@ interface are **not hardware tested**.
 - The hard-link probe now records why links fail; the system check exposes the
   result, and the dry-run plan counts the extra space overlay copies would need.
 - The built-in testing status describes the partial hardware test.
+- The staging folder of a check stayed behind on the PS5 although deleting it
+  reported success (second hardware test). Folders are now deleted with plain
+  `lstat`/`opendir`/`unlink`/`rmdir` calls and checked afterwards; the download
+  test lists anything left in staging; probe clean-up failures are logged.
 
 ### Added
 - Research notes on ShadowMountPlus 1.7, the PS5 payload SDK, pacbrew libraries,

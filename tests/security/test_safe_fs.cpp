@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Doctest.hpp"
 
+#include <unistd.h>
+
 #include <sys/stat.h>
 
 #include "TestSupport.hpp"
@@ -67,6 +69,33 @@ TEST_CASE("removeTree does not follow symlinks out of the root") {
     SafeFs safe = makeFs(outer.path() / "root");
     REQUIRE(safe.removeTree(outer.path() / "root" / "staging").ok());
     CHECK(fs::exists(outer.path() / "precious" / "keep.txt"));
+}
+
+TEST_CASE("removeTree deletes deep trees, hidden files and missing paths") {
+    test::TempDir dir;
+    SafeFs safe = makeFs(dir.path());
+    fs::path deep = dir.path() / "staging" / "check";
+    for (int i = 0; i < 40; ++i) deep /= "d";
+    fs::create_directories(deep);
+    test::writeText(deep / ".hidden", "x");
+    test::writeText(dir.path() / "staging" / "check" / "top.txt", "x");
+    fs::create_symlink("/nonexistent", dir.path() / "staging" / "check" / "dangling");
+    REQUIRE(safe.removeTree(dir.path() / "staging" / "check").ok());
+    CHECK_FALSE(fs::exists(fs::symlink_status(dir.path() / "staging" / "check")));
+    CHECK(fs::is_empty(dir.path() / "staging"));
+    CHECK(safe.removeTree(dir.path() / "staging" / "never-there").ok());
+}
+
+TEST_CASE("removeTree reports a folder it cannot delete") {
+    if (::geteuid() == 0) return;  // root ignores directory permissions
+    test::TempDir dir;
+    SafeFs safe = makeFs(dir.path());
+    fs::create_directories(dir.path() / "staging" / "locked" / "inner");
+    test::writeText(dir.path() / "staging" / "locked" / "inner" / "f", "x");
+    fs::permissions(dir.path() / "staging" / "locked" / "inner", fs::perms::owner_read | fs::perms::owner_exec);
+    auto removed = safe.removeTree(dir.path() / "staging" / "locked");
+    fs::permissions(dir.path() / "staging" / "locked" / "inner", fs::perms::owner_all);
+    CHECK_FALSE(removed.ok());
 }
 
 TEST_CASE("hard links can be created inside the root") {

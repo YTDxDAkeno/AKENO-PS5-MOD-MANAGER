@@ -3,8 +3,11 @@
 
 #include <cerrno>
 #include <cstring>
+#include <string>
 #include <system_error>
+#include <vector>
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -28,6 +31,49 @@ Error ioError(std::string message, const fs::path& path, int err) {
 
 Error ioError(std::string message, const fs::path& path, const std::error_code& ec) {
     return ioError(std::move(message), path, ec.value());
+}
+
+// Deletes a tree with plain path-based calls (lstat, opendir, unlink, rmdir). std::filesystem::
+// remove_all was not used: on the first PS5 test it reported success and left the folder behind.
+// Symlinks are removed, never followed. Returns 0 or the errno of the first failure.
+int removeTreeAt(const std::string& path, int depth, std::string& failedPath) {
+    struct stat info {};
+    if (::lstat(path.c_str(), &info) != 0) {
+        if (errno == ENOENT) return 0;
+        failedPath = path;
+        return errno;
+    }
+    if (!S_ISDIR(info.st_mode)) {
+        if (::unlink(path.c_str()) != 0 && errno != ENOENT) {
+            failedPath = path;
+            return errno;
+        }
+        return 0;
+    }
+    if (depth > 256) {
+        failedPath = path;
+        return ELOOP;
+    }
+    std::vector<std::string> children;
+    DIR* dir = ::opendir(path.c_str());
+    if (dir == nullptr) {
+        failedPath = path;
+        return errno;
+    }
+    while (const dirent* entry = ::readdir(dir)) {
+        const std::string_view name = entry->d_name;
+        if (name == "." || name == "..") continue;
+        children.emplace_back(path + "/" + std::string(name));
+    }
+    ::closedir(dir);
+    for (const std::string& child : children) {
+        if (int err = removeTreeAt(child, depth + 1, failedPath); err != 0) return err;
+    }
+    if (::rmdir(path.c_str()) != 0 && errno != ENOENT) {
+        failedPath = path;
+        return errno;
+    }
+    return 0;
 }
 
 // Flushes a directory entry change (create/rename) to disk. Best effort: some file systems
@@ -198,11 +244,15 @@ Status SafeFs::removeTree(const fs::path& target) const {
                              root.string());
         }
     }
-    std::error_code ec;
-    // std::filesystem::remove_all removes symlinks themselves and never follows them.
-    fs::remove_all(checked.value(), ec);
-    if (ec) {
-        return ioError("Could not remove a directory.", checked.value(), ec);
+    std::string failedPath;
+    if (int err = removeTreeAt(checked.value().string(), 0, failedPath); err != 0) {
+        return ioError("Could not remove a directory.", failedPath, err);
+    }
+    // Trust only what is visible afterwards.
+    struct stat info {};
+    if (::lstat(checked.value().c_str(), &info) == 0) {
+        return makeError(ErrorCode::IoError, "A folder was still there after it was deleted.",
+                         checked.value().string());
     }
     return {};
 }

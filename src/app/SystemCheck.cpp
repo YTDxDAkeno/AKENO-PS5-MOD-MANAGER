@@ -304,8 +304,11 @@ CheckResult SystemChecker::checkOverlayCapability(const CheckResult& shadowMount
             hardLinks = true;
         }
     }
-    (void)deps_.fs->removeFile(a);
-    (void)deps_.fs->removeFile(b);
+    for (const fs::path& probe : {a, b}) {
+        if (auto removed = deps_.fs->removeFile(probe); !removed) {
+            logging::logger().warn("syscheck", "could not remove a probe file: " + removed.error().describe());
+        }
+    }
     hardLinks_ = hardLinks;
     facts = strings::concat("hard links in app storage: ", hardLinks ? "supported" : "not supported (" + why + ")",
                             "; ShadowMount API: ", shadowMountApi.status == CheckStatus::Ok ? "connected" : "unavailable");

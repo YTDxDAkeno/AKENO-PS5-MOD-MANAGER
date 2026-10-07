@@ -11,8 +11,8 @@ std::string_view compiler() { return "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILE
 
 std::string_view testingStatus() {
     // Keep in step with docs/compatibility.md.
-    return "unit tested on the host; on a PS5 (firmware 12.20) only the system check and the game list were "
-           "tried so far; downloads, mod checks and the user interface are not hardware tested";
+    return "unit tested on the host; on a PS5 (firmware 12.20) the system check, the game list and one test "
+           "download with unpacking were tried; the user interface and real mods are not hardware tested";
 }
 
 }  // namespace akeno::build

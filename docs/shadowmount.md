@@ -140,9 +140,10 @@ over the game at launch:
 
 ## 5. Open questions for hardware testing
 
-* Why does `link()` fail in `/data/akeno-mod-manager/staging` on 12.20
-  (first hardware test)? Builds after 2026-10-07 log the error. If hard
-  links stay unavailable, the question below is moot and overlays use copies.
+* Why does `link()` fail in `/data/akeno-mod-manager/staging` on 12.20?
+  The second hardware test logged `ENOENT` for the new name although the
+  folder and the source file exist. If hard links stay unavailable, the
+  question below is moot and overlays use copies.
 * Does a hard-linked file in the backport behave identically to a regular
   file for both unionfs and NSFS redirects?
 * Does the PS5 build of the first target game (Stellar Blade) load

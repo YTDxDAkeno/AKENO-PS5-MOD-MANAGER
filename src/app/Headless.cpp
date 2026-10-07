@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <thread>
+#include <vector>
 
 #include "akeno/core/Strings.hpp"
 #include "akeno/downloads/DownloadManager.hpp"
@@ -92,13 +93,27 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
         passed = false;
         return "Check:    FAILED - " + report.error().message;
     }
+    // What is left in staging, by name, so a hardware report shows the cause.
     std::error_code ec;
-    const bool stagingEmpty = std::filesystem::is_empty(context.paths().staging(), ec) && !ec;
+    std::vector<std::string> leftovers;
+    for (std::filesystem::directory_iterator it(context.paths().staging(), ec), end; !ec && it != end;
+         it.increment(ec)) {
+        if (leftovers.size() < 10) leftovers.push_back(it->path().filename().string());
+    }
+    const bool stagingEmpty = leftovers.empty() && !ec;
     mods::completeReport(report.value(), context.paths(), hardLinks);
     const auto& a = report->analysis;
     std::string text = strings::concat("Check:    PASSED - ", report->archiveFiles, " file(s) unpacked into ",
                                        context.paths().staging().string(), "\n");
-    text += strings::concat("Staging:  ", stagingEmpty ? "deleted again" : "NOT EMPTY", "\n");
+    if (stagingEmpty) {
+        text += "Staging:  deleted again\n";
+    } else if (ec) {
+        text += "Staging:  NOT CHECKED - could not list it: " + ec.message() + "\n";
+    } else {
+        std::string names;
+        for (const auto& name : leftovers) names += (names.empty() ? "" : ", ") + name;
+        text += "Staging:  NOT EMPTY - left: " + names + "\n";
+    }
     text += strings::concat("Analysis: ", a.installCount, " file(s) to install, ", a.findings.size(), " finding(s)\n");
     for (const auto& file : a.files) {
         text += strings::concat("          ", file.archivePath, " (", mods::toString(file.kind), ", ",
