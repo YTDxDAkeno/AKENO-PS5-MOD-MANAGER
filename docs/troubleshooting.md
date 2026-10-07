@@ -117,3 +117,11 @@ The PS5 SDL port exposes the pad as a raw joystick. Akeno maps its button
 order (✕ ○ □ △, OPTIONS, L1/R1, D-pad) and the left stick. This mapping
 comes from the port's source and is **not yet hardware tested**. Please
 report which buttons do what.
+
+## The user interface does not start: "SDL_Init failed: sceKernelAllocateMainDirectMemory"
+
+Seen once on firmware 12.20: the first start from the Homebrew Launcher failed
+with `Resource temporarily unavailable`; a second start a few minutes later
+worked. The console had no free direct memory for the screen at that moment.
+Close other homebrew and the web browser, wait a moment, and start Akeno again.
+If it keeps failing, send `logs/akeno.log`.

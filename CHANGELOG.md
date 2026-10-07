@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 semantic versioning once it reaches 1.0. Until then, minor versions may change
 anything.
 
-## [0.1.0-alpha] - unreleased
+## [0.1.0-alpha] - 2026-10-07
 
 First development release: **Phase 0 (research), Phase 1 (safe game browser),
 Phase 2 (online mod browser), Phase 3 (download engine) and Phase 4 (mod check:

@@ -7,8 +7,9 @@
 > downloads)** and **Phase 4 (secure unpacking, analysis and a dry-run install plan)**. It
 > **does not install mods yet**, and it **never modifies game files**.
 > It has been **compiled and unit tested on a Linux host**. On PS5 hardware (firmware 12.20,
-> ShadowMountPlus 1.7beta4) the headless system check, the game list and one small test download
-> with unpacking have been tried; the user interface and real mods are **not hardware tested**.
+> ShadowMountPlus 1.7beta4) the headless system check, the game list, one small test download
+> with unpacking and the user interface have been tried; **real mods are not hardware tested**, and
+> **installing mods (Phase 5) is not implemented**. See [docs/next-steps.md](docs/next-steps.md).
 > Do not read anything in this repository as "works on firmware 12.20" beyond what the
 > [hardware test log](docs/compatibility.md#hardware-test-log) records.
 
@@ -196,11 +197,11 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Research ([docs/research.md](docs/research.md)) | done |
-| 1 | Safe game browser | implemented; system check and game list partly hardware tested (12.20) |
+| 1 | Safe game browser | implemented; system check, game list and UI partly hardware tested (12.20) |
 | 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
 | 3 | Download engine | implemented; one test download hardware tested (12.20) |
 | 4 | Mod analyser, secure extraction, dry run | implemented; the test archive checked on hardware (12.20) |
-| 5 | ShadowMountPlus overlay, rollback, Vanilla | planned |
+| 5 | ShadowMountPlus overlay, rollback, Vanilla | designed ([docs/shadowmount.md](docs/shadowmount.md)), not implemented; see [docs/next-steps.md](docs/next-steps.md) |
 | 6 | Load order, profiles, dependencies | planned |
 | 7 | Nexus Mods, mod.io | planned |
 | 8 | Advanced compatibility (Unreal) | planned |

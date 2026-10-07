@@ -21,14 +21,14 @@ upgraded without evidence.
 | HTTPS client (libcurl) | ✓ host + PS5 | ✓ (loopback server) | – | ✓ 2026-10-07: certificate check with the embedded CA bundle, one download from GitHub |
 | ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✓ 2026-10-07 (1.7beta4), including game versions from `param.json` (14 of 14) |
 | System check / Safe Mode | ✓ host + PS5 | ✓ | ✓ | ✓ 2026-10-07 (12.20) |
-| User interface | ✓ host + PS5 | ✓ (screen logic) | ✓ (desktop, offscreen) | ✗ |
+| User interface | ✓ host + PS5 | ✓ (screen logic) | ✓ (desktop, offscreen) | partly: started from the websrv Homebrew Launcher, software renderer, tabs, game list, settings, catalogue, diagnostic export, 2026-10-07 |
 | Akeno Catalogue provider, compatibility labels | ✓ host + PS5 | ✓ (fixtures) | ✓ (mock server, real HTTP client) | ✗ |
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
 | Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | partly: one small file downloaded and verified, 2026-10-07; resume and retries not hardware tested |
 | Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | partly: the one-file test archive unpacked and its staging folder deleted, 2026-10-07 (third run) |
 | Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | partly: the test archive analysed and planned (copies), 2026-10-07 |
-| Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
+| Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | partly: controller and PS5 Remote Control detected and used, 2026-10-07 |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | firmware detection ✓ 2026-10-07; notifications ✗ (not reported) |
 
 "Partly" and "✓" refer to one run on one console. Nothing here is **verified**
@@ -135,3 +135,17 @@ Result:
 * Not covered: the user interface (`AkenoModManager-homebrew.zip`), real mods, resume/retry.
 Logs: akeno.log, system-check, games, download-test (not published)
 
+### 2026-10-07 - repository owner - Akeno 0.1.0-alpha (2fff9384ba1a), user interface
+Console: PS5, firmware 12.20
+Environment: as before, plus websrv and its Homebrew Launcher
+Steps: `AkenoModManager-homebrew.zip` in `/data/homebrew/AkenoModManager/`, started from the launcher
+Result:
+* First start: **SDL could not start** (`sceKernelAllocateMainDirectMemory: Resource temporarily
+  unavailable`), exit code 1. A second start three minutes later worked. Likely the memory was
+  still held by something started before (cause not confirmed); see docs/troubleshooting.md.
+* Second start: software renderer; a controller and the PS5 Remote Control were detected; system
+  check, game list (14 games with versions) and a library refresh worked; settings were saved; the
+  catalogue loaded (0 games, as expected); a second system check and a diagnostic export worked;
+  the UI closed cleanly (exit code 0).
+* Not covered: downloads and mod checks from the UI, the search keyboard, notifications.
+Logs: akeno.log, diagnostic report (not published)
