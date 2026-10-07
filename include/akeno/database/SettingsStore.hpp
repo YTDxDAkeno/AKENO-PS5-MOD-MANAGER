@@ -33,6 +33,8 @@ struct Settings {
     std::string networkProbeUrl = "https://raw.githubusercontent.com/";
     // Akeno Catalogue location: https, or http to this console for local testing.
     std::string catalogueUrl = std::string(kDefaultCatalogueUrl);
+    // GameBanana (free mods). Off until the user agrees that installed game names are sent there.
+    bool gameBanana = false;
 };
 
 std::string_view toString(LibrarySort sort) noexcept;

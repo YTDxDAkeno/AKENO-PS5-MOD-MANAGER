@@ -29,6 +29,7 @@ std::string itemLabel(SettingsScreen::Item item) {
         case SettingsScreen::Item::DebugLogging: return "Detailed (debug) logging";
         case SettingsScreen::Item::ShadowMountPort: return "ShadowMountPlus API port (127.0.0.1)";
         case SettingsScreen::Item::CatalogueUrl: return "Mod catalogue address";
+        case SettingsScreen::Item::GameBanana: return "GameBanana mods (free)";
         case SettingsScreen::Item::RunSystemCheck: return "Run the system check";
         case SettingsScreen::Item::ViewLog: return "View the log";
         case SettingsScreen::Item::ExportDiagnostics: return "Export diagnostic log";
@@ -41,6 +42,7 @@ std::string itemLabel(SettingsScreen::Item item) {
 std::string itemValue(SettingsScreen::Item item, const database::Settings& s) {
     switch (item) {
         case SettingsScreen::Item::ShowPs4: return s.showPs4Games ? "On" : "Off";
+        case SettingsScreen::Item::GameBanana: return s.gameBanana ? "On" : "Off";
         case SettingsScreen::Item::ShowHomebrew: return s.showHomebrew ? "On" : "Off";
         case SettingsScreen::Item::LibrarySort: return sortName(s.librarySort);
         case SettingsScreen::Item::DebugLogging: return s.debugLogging ? "On" : "Off";
@@ -110,6 +112,11 @@ NavRequest SettingsScreen::handle(Action action, UiEnv& env) {
         return NavRequest::none();
     }
     switch (item) {
+        case Item::GameBanana:
+            s.gameBanana = !s.gameBanana;
+            save(env, s, s.gameBanana ? "GameBanana is on. Open Discover to see its mods."
+                                      : "GameBanana is off. Nothing is sent there any more.");
+            break;
         case Item::ShowPs4:
             s.showPs4Games = !s.showPs4Games;
             save(env, s, s.showPs4Games ? "PS4 games are shown" : "PS4 games are hidden");
@@ -177,6 +184,11 @@ void SettingsScreen::render(ICanvas& canvas, UiEnv& env) {
     std::string explanation;
     switch (static_cast<Item>(list_.focus())) {
         case Item::ShowPs4: explanation = "PS4 titles are listed for completeness. Mods target PS5 games first."; break;
+        case Item::GameBanana:
+            explanation = "Free mods from gamebanana.com, no account needed. To find your games there, Akeno sends "
+                          "the names of your installed games to GameBanana. GameBanana mods are made for PC and are "
+                          "always EXPERIMENTAL.";
+            break;
         case Item::ShowHomebrew: explanation = "Homebrew apps registered by ShadowMountPlus (LAPY/FAKE IDs)."; break;
         case Item::LibrarySort: explanation = "Order of the Games tab. TRIANGLE in the Games tab does the same."; break;
         case Item::DebugLogging: explanation = "Writes more detail to logs/akeno.log. Secrets are always removed."; break;

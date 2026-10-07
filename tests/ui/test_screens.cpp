@@ -231,6 +231,12 @@ TEST_CASE("settings can open the system check and the first-run guide") {
     test::UiHarness h;
     SettingsScreen screen;
     for (int i = 0; i < 6; ++i) screen.handle(Action::Down, h.env);
+    // GameBanana is off until switched on, and says what is sent.
+    CHECK_FALSE(h.state.settings.gameBanana);
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.state.settings.gameBanana);
+    CHECK(h.toasted("GameBanana is on"));
+    screen.handle(Action::Down, h.env);
     auto nav = screen.handle(Action::Confirm, h.env);
     CHECK(nav.kind == NavRequest::Kind::Push);
     CHECK(dynamic_cast<SystemCheckScreen*>(nav.screen.get()) != nullptr);

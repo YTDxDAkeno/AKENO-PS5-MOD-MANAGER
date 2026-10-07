@@ -37,6 +37,11 @@ tested on a Linux host; **not hardware tested yet.**
   requires) downloaded. Always EXPERIMENTAL. Nexus files have no published
   checksum: the size is checked and the SHA-256 recorded. See
   `docs/nexus-mods.md`. Tested with recorded answers only.
+- GameBanana provider (free, no account): opt-in setting, because installed
+  game names are sent to gamebanana.com to find them; mods listed, searched and
+  downloaded for free; always EXPERIMENTAL; no published checksum, so the size
+  is checked and the SHA-256 recorded. See `docs/gamebanana.md`. Tested with
+  recorded answers only.
 
 ## [0.1.0-alpha] - 2026-10-07
 

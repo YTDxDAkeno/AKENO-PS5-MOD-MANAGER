@@ -20,6 +20,7 @@ constexpr std::string_view kSmPort = "shadowmount.port";
 constexpr std::string_view kDebugLogging = "logging.debug";
 constexpr std::string_view kProbeUrl = "network.probe_url";
 constexpr std::string_view kCatalogueUrl = "catalogue.url";
+constexpr std::string_view kGameBanana = "providers.gamebanana";
 
 bool parseBool(const std::string& text, bool& out) {
     if (text == "1" || text == "true") {
@@ -85,6 +86,7 @@ Result<SettingsLoadResult> SettingsStore::load() {
     };
     readBool(kFirstRun, s.firstRunComplete);
     readBool(kShowPs4, s.showPs4Games);
+    readBool(kGameBanana, s.gameBanana);
     readBool(kShowHomebrew, s.showHomebrew);
     readBool(kDebugLogging, s.debugLogging);
     if (auto it = stored.find(std::string(kSort)); it != stored.end() && !parseSort(it->second, s.librarySort)) {
@@ -126,6 +128,7 @@ Status SettingsStore::save(const Settings& settings) {
     const std::vector<std::pair<std::string_view, std::string>> values{
         {kFirstRun, settings.firstRunComplete ? "1" : "0"},
         {kShowPs4, settings.showPs4Games ? "1" : "0"},
+        {kGameBanana, settings.gameBanana ? "1" : "0"},
         {kShowHomebrew, settings.showHomebrew ? "1" : "0"},
         {kSort, std::string(toString(settings.librarySort))},
         {kSmPort, std::to_string(settings.shadowMountPort)},

@@ -20,6 +20,7 @@
 #include "akeno/network/CurlHttpClient.hpp"
 #include "akeno/platform/Platform.hpp"
 #include "akeno/providers/AkenoCatalogProvider.hpp"
+#include "akeno/providers/GameBananaProvider.hpp"
 #include "akeno/providers/NexusProvider.hpp"
 #include "akeno/security/SafeFs.hpp"
 #include "akeno/shadowmount/ShadowMountGameProvider.hpp"
@@ -48,6 +49,8 @@ public:
     std::shared_ptr<providers::AkenoCatalogProvider> catalogue() const { return catalogue_; }
     // Nexus Mods, when the user placed a personal API key in <data>/nexus-apikey.txt.
     std::shared_ptr<providers::NexusProvider> nexus() const { return nexus_; }
+    // GameBanana; used only while the setting is on.
+    std::shared_ptr<providers::GameBananaProvider> gameBanana() const { return gameBanana_; }
     const std::optional<Error>& catalogueError() const { return catalogueError_; }
     // True when --catalogue-url set the address for this session (the setting is then ignored).
     bool catalogueOverridden() const { return catalogueOverride_.has_value(); }
@@ -96,6 +99,7 @@ private:
     std::unique_ptr<downloads::DownloadManager> downloads_;
     std::shared_ptr<providers::AkenoCatalogProvider> catalogue_;
     std::shared_ptr<providers::NexusProvider> nexus_;
+    std::shared_ptr<providers::GameBananaProvider> gameBanana_;
     std::optional<Error> catalogueError_;
     std::optional<std::string> catalogueOverride_;  // --catalogue-url for this session
 };

@@ -166,6 +166,8 @@ Result<std::unique_ptr<AppContext>> AppContext::create(const CommandLine& comman
     ctx->downloads_ =
         std::make_unique<downloads::DownloadManager>(*ctx->http_, *ctx->fs_, ctx->db_.get(), std::move(downloadOptions));
 
+    ctx->gameBanana_ = std::make_shared<providers::GameBananaProvider>(*ctx->http_);
+
     // 9. Nexus Mods: only with the user's own personal API key (never logged).
     const fs::path keyFile = ctx->paths_.root / "nexus-apikey.txt";
     if (fs::exists(keyFile)) {

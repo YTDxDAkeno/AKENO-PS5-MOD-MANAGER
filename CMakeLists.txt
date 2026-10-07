@@ -108,6 +108,7 @@ add_library(akeno_core STATIC
     src/compatibility/CompatibilityRules.cpp
     src/providers/AkenoCatalogProvider.cpp
     src/providers/NexusProvider.cpp
+    src/providers/GameBananaProvider.cpp
     src/downloads/DownloadTypes.cpp
     src/downloads/DownloadStore.cpp
     src/downloads/DownloadManager.cpp

@@ -251,7 +251,8 @@ void AppController::applyFilter() {
 }
 
 Status AppController::saveSettings(const database::Settings& settings) {
-    const bool catalogueChanged = settings.catalogueUrl != state_.settings.catalogueUrl;
+    const bool catalogueChanged = settings.catalogueUrl != state_.settings.catalogueUrl ||
+                                  settings.gameBanana != state_.settings.gameBanana;
     AKENO_TRY(context_.saveSettings(settings));
     state_.settings = settings;
     applyFilter();
@@ -448,11 +449,17 @@ void AppController::resetCatalogView() {
 
 std::shared_ptr<providers::IModProvider> AppController::providerFor(std::string_view providerId) const {
     if (providerId == providers::kNexusProviderId) return context_.nexus();
+    if (providerId == providers::kGameBananaProviderId) {
+        return state_.settings.gameBanana ? context_.gameBanana() : nullptr;
+    }
     return context_.catalogue();
 }
 
 std::shared_ptr<providers::IModProvider> AppController::providerForGame(const std::string& providerGameId) const {
     if (strings::startsWith(providerGameId, providers::kNexusGamePrefix)) return context_.nexus();
+    if (strings::startsWith(providerGameId, providers::kGameBananaGamePrefix)) {
+        return state_.settings.gameBanana ? context_.gameBanana() : nullptr;
+    }
     return context_.catalogue();
 }
 
@@ -460,7 +467,8 @@ void AppController::loadCatalogGames(bool forceRefresh) {
     CatalogView& view = state_.catalog;
     auto provider = context_.catalogue();
     auto nexus = context_.nexus();
-    if (!provider && !nexus) {
+    auto banana = state_.settings.gameBanana ? context_.gameBanana() : nullptr;
+    if (!provider && !nexus && !banana) {
         view.error = context_.catalogueError().value_or(
             makeError(ErrorCode::Unavailable, "The mod catalogue address is not valid."));
         return;
@@ -470,12 +478,11 @@ void AppController::loadCatalogGames(bool forceRefresh) {
     }
     view.loading = true;
     const std::uint64_t generation = catalogGeneration_;
-    if (nexus) {
-        std::vector<providers::InstalledGameName> installed;
-        for (const auto& game : allGames_) installed.push_back({game.titleId, game.name});
-        nexus->setInstalledGames(std::move(installed));
-    }
-    tasks_.submit([this, provider, nexus, forceRefresh, generation] {
+    std::vector<providers::InstalledGameName> installed;
+    for (const auto& game : allGames_) installed.push_back({game.titleId, game.name});
+    if (nexus) nexus->setInstalledGames(installed);
+    if (banana) banana->setInstalledGames(installed);
+    tasks_.submit([this, provider, nexus, banana, forceRefresh, generation] {
         Result<std::vector<providers::ProviderGame>> games = std::vector<providers::ProviderGame>{};
         if (provider) {
             if (forceRefresh) provider->clearCache();
@@ -489,6 +496,16 @@ void AppController::loadCatalogGames(bool forceRefresh) {
             } else {
                 logger().warn("nexus", "could not load the Nexus Mods games: " + more.error().describe());
                 if (!provider) games = more.error();
+            }
+        }
+        if (banana) {
+            auto more = banana->listGames(nullptr);
+            if (more) {
+                if (!games) games = std::vector<providers::ProviderGame>{};
+                for (auto& game : more.value()) games->push_back(std::move(game));
+            } else {
+                logger().warn("gamebanana", "could not load the GameBanana games: " + more.error().describe());
+                if (!provider && !nexus) games = more.error();
             }
         }
         mainQueue_.post([this, generation, games = std::move(games)]() mutable {

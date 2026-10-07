@@ -25,6 +25,7 @@ add_executable(akeno_tests
     compatibility/test_compatibility_rules.cpp
     providers/test_catalog_provider.cpp
     providers/test_nexus_provider.cpp
+    providers/test_gamebanana_provider.cpp
     downloads/test_downloads.cpp
     archives/test_secure_extractor.cpp
     mods/test_mod_analyzer.cpp

@@ -77,7 +77,8 @@ Status validateRequest(const DownloadRequest& request) {
                          std::to_string(request.expectedSize));
     }
     // Nexus Mods publishes no checksums: there the exact size is checked and the hash recorded.
-    const bool checksumOptional = request.mod.providerId == "nexus" && request.expectedSha256.empty();
+    const bool checksumOptional = (request.mod.providerId == "nexus" || request.mod.providerId == "gamebanana") &&
+                                  request.expectedSha256.empty();
     if (!checksumOptional && !security::isSha256Hex(request.expectedSha256)) {
         return makeError(ErrorCode::InvalidArgument,
                          "The download has no valid SHA-256 checksum, so it could not be verified.");

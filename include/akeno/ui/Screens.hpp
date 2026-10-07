@@ -234,13 +234,14 @@ public:
         DebugLogging,
         ShadowMountPort,
         CatalogueUrl,
+        GameBanana,
         RunSystemCheck,
         ViewLog,
         ExportDiagnostics,
         FirstRunGuide,
         Exit,
     };
-    static constexpr int kItemCount = 11;
+    static constexpr int kItemCount = 12;
 
     std::string title() const override { return "Settings"; }
     void update(UiEnv& env) override;
