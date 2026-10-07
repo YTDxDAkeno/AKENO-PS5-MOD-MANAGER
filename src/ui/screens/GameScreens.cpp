@@ -216,6 +216,15 @@ constexpr std::array<DetailAction, 3> kDetailActions{DetailAction::BrowseMods, D
 
 }  // namespace
 
+void GameDetailScreen::update(UiEnv& env) {
+    // The catalogue tells whether this game has mods; load it once in the background.
+    const CatalogView& catalog = env.state.catalog;
+    if (!catalogRequested_ && catalog.configured && !catalog.loaded && !catalog.loading) {
+        catalogRequested_ = true;
+        env.commands.loadCatalogGames(false);
+    }
+}
+
 NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
     actions_.setCount(static_cast<int>(kDetailActions.size()));
     actions_.setVisibleRows(static_cast<int>(kDetailActions.size()));
@@ -227,9 +236,26 @@ NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
     }
     if (action == Action::Confirm) {
         switch (kDetailActions[static_cast<std::size_t>(actions_.focus())]) {
-            case DetailAction::BrowseMods:
-                env.showToast("Mod browsing arrives in Phase 2 (Akeno catalogue).", ToastKind::Warning);
+            case DetailAction::BrowseMods: {
+                const CatalogView& catalog = env.state.catalog;
+                const games::GameInfo* game = findGame(env.state, titleId_);
+                const providers::ProviderGame* entry = catalog.findByTitleId(titleId_);
+                if (game != nullptr && entry != nullptr) {
+                    return NavRequest::push(std::make_unique<ModBrowserScreen>(
+                        entry->providerGameId, entry->name, providers::GameContext{game->titleId, game->version}));
+                }
+                if (!catalog.configured) {
+                    env.showToast("The mod catalogue address is not valid. Check Settings.", ToastKind::Error);
+                } else if (catalog.loading) {
+                    env.showToast("Still loading the Akeno Catalogue...");
+                } else if (!catalog.loaded) {
+                    env.commands.loadCatalogGames(true);
+                    env.showToast("The catalogue could not be loaded. Trying again...", ToastKind::Warning);
+                } else {
+                    env.showToast("The Akeno Catalogue has no mods for this game yet.");
+                }
                 break;
+            }
             case DetailAction::Launch:
                 env.showToast("Launching games from Akeno is planned for a later release.", ToastKind::Warning);
                 break;
@@ -258,14 +284,29 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     drawGameArt(canvas, env, *game, art, kIconSize);
 
     actions_.setCount(static_cast<int>(kDetailActions.size()));
-    const std::array<const char*, 3> labels{"Browse mods", "Launch game", "Back"};
+    const CatalogView& catalog = env.state.catalog;
+    const providers::ProviderGame* entry = catalog.findByTitleId(titleId_);
+    std::string browseLabel = "Browse mods";
+    if (entry != nullptr) browseLabel = strings::concat("Browse mods (", entry->modCount, ")");
+    const std::array<std::string, 3> labels{browseLabel, "Launch game", "Back"};
     int buttonY = art.bottom() + 30;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         const Rect row{content.x, buttonY + i * 84, kIconSize, 70};
-        const bool enabled = kDetailActions[static_cast<std::size_t>(i)] == DetailAction::Back;
+        const DetailAction kind = kDetailActions[static_cast<std::size_t>(i)];
+        const bool enabled = kind == DetailAction::Back || (kind == DetailAction::BrowseMods && entry != nullptr);
         draw::button(canvas, row, labels[static_cast<std::size_t>(i)], actions_.focus() == i, enabled);
     }
-    canvas.drawText("Not available in this version", {content.x, buttonY + 3 * 84, kIconSize, 36},
+    std::string note = "Launching is not available yet";
+    if (entry == nullptr) {
+        if (catalog.loaded) {
+            note = "No mods in the Akeno Catalogue yet";
+        } else if (!catalog.configured || (catalog.error && !catalog.loading)) {
+            note = "The Akeno Catalogue is unavailable";
+        } else {
+            note = "Checking the Akeno Catalogue...";
+        }
+    }
+    canvas.drawText(note, {content.x, buttonY + 3 * 84, kIconSize, 36},
                     TextStyle{FontRole::Small, theme::kTextDisabled, TextAlign::Left, false});
 
     const int infoX = content.x + kIconSize + 60;
@@ -297,8 +338,8 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
         y += 54;
     }
     drawWrappedText(canvas,
-                    "Mods for this game cannot be browsed or installed in this version. Akeno will never modify "
-                    "the original game files; mods will be applied through ShadowMountPlus overlays.",
+                    "Mods can be browsed in this version but not yet downloaded or installed. Akeno will never "
+                    "modify the original game files; mods will be applied through ShadowMountPlus overlays.",
                     {infoX, y + 16, infoW, 120},
                     TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 38, 3);
 }

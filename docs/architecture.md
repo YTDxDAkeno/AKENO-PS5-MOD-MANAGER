@@ -136,7 +136,7 @@ See `docs/shadowmount.md` for the overlay contract and
   database/akeno.sqlite
   downloads/            *.partial while downloading
   cache/icons/          game icons (PNG, keyed by title ID + version)
-  cache/images/         screenshots (Phase 2)
+  cache/images/         thumbnails and screenshots, named by URL hash
   staging/              per-operation extraction directories
   mods/<TITLE_ID>/<MOD_ID>/
   overlays/<TITLE_ID>/  overlay.next / overlay.previous (Phase 5)
@@ -162,7 +162,7 @@ See `docs/shadowmount.md` for the overlay contract and
 | --- | --- | --- |
 | 0 | Research | done (`docs/research.md`) |
 | 1 | App start, controller, ShadowMount connection, games, icons, versions, settings, logging | implemented; compiled and unit tested; **not hardware tested** |
-| 2 | Akeno catalogue, HTTPS, metadata, screenshots, search, badges | interfaces only |
+| 2 | Akeno catalogue, HTTPS, metadata, screenshots, search, badges | implemented; compiled, unit and mock tested; **not hardware tested** |
 | 3 | Downloads, pause/resume, SHA-256, storage checks | not started |
 | 4 | Secure extraction, analysis, conflict prediction, dry run | not started |
 | 5 | Overlay generation and activation, rollback, vanilla | not started |

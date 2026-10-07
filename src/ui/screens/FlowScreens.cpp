@@ -275,14 +275,14 @@ void WizardScreen::render(ICanvas& canvas, UiEnv& env) {
         }
         case 4:
             drawWrappedText(canvas,
-                            "Akeno Catalogue: a curated list of mods checked for PS5, hosted on GitHub. It will be "
-                            "the first provider (Phase 2).",
+                            "Akeno Catalogue: a curated list of mods checked for PS5, hosted on GitHub. It is the "
+                            "default source and can be browsed in the Discover tab.",
                             {x, 260, width, 100}, TextStyle{FontRole::Body, theme::kTextPrimary}, 46, 2);
             drawWrappedText(canvas,
                             "Nexus Mods and mod.io are planned for Phase 7, only through their official APIs and "
                             "rules. Akeno will never scrape websites or bypass download restrictions.",
                             {x, 400, width, 140}, body, 46, 3);
-            drawWrappedText(canvas, "There is nothing to choose yet in this version.", {x, 580, width, 60},
+            drawWrappedText(canvas, "There is nothing else to choose in this version.", {x, 580, width, 60},
                             TextStyle{FontRole::Body, theme::kWarning}, 46, 1);
             break;
         case 5:
@@ -402,15 +402,7 @@ void RecoveryScreen::render(ICanvas& canvas, UiEnv& env) {
 void setupScreens(ScreenHost& host, const AppViewState& state) {
     host.setTabRoot(Tab::Home, std::make_unique<HomeScreen>());
     host.setTabRoot(Tab::Games, std::make_unique<GameLibraryScreen>());
-    host.setTabRoot(Tab::Discover,
-                    std::make_unique<PlannedFeatureScreen>(
-                        "Discover", "Planned for Phase 2",
-                        std::vector<std::string>{
-                            "Browse the curated Akeno catalogue of PS5-compatible mods, with search, categories, "
-                            "screenshots and compatibility badges.",
-                            "Nothing about your console is sent anywhere except the requests needed to load the "
-                            "catalogue.",
-                            "Nexus Mods and mod.io follow in Phase 7, through their official APIs only."}));
+    host.setTabRoot(Tab::Discover, std::make_unique<DiscoverScreen>());
     host.setTabRoot(Tab::Downloads,
                     std::make_unique<PlannedFeatureScreen>(
                         "Downloads", "Planned for Phase 3",

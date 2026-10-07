@@ -3,9 +3,13 @@
 // the UI thread; background work posts its results through MainThreadQueue.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "akeno/app/AppContext.hpp"
@@ -18,8 +22,10 @@ namespace akeno::ui {
 class IImageLoader {
 public:
     virtual ~IImageLoader() = default;
-    // Idempotent and cheap for keys that are already loading, loaded or failed.
-    virtual void ensure(const std::string& key, int size, std::function<Result<std::string>()> fetch) = 0;
+    // Idempotent and cheap for keys that are already loading, loaded or failed. The decoded
+    // image is scaled to fit width x height (letterboxed, aspect ratio kept).
+    virtual void ensure(const std::string& key, int width, int height,
+                        std::function<Result<std::string>()> fetch) = 0;
     // Allows images that failed to load to be tried again (after a library refresh).
     virtual void retryFailed() = 0;
 };
@@ -42,11 +48,29 @@ public:
     Status cleanInterruptedOperation() override;
     void postponeRecovery() override;
     std::string gameIconKey(const games::GameInfo& game, int size) override;
+    std::string remoteImageKey(const std::string& url, int width, int height) override;
     void requestQuit() override { quit_ = true; }
+
+    void loadCatalogGames(bool forceRefresh) override;
+    void loadModList(const providers::SearchQuery& query) override;
+    void loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>& game) override;
+
+    void requestTextInput(const std::string& prompt, const std::string& initial,
+                          std::function<void(std::optional<std::string>)> done) override;
+    // Text entry events from the input backend (UI thread).
+    void appendTextInput(std::string_view utf8);
+    void eraseTextInput();               // removes the last character
+    void setTextInput(std::string text);
+    void finishTextInput(bool accepted); // calls the pending callback
+
+    static constexpr std::size_t kMaxTextInputBytes = 256;
 
 private:
     void applyFilter();
+    void resetCatalogView();
+    void pruneImageCache();
     Result<std::string> fetchIcon(const games::GameInfo& game);
+    Result<std::string> fetchRemoteImage(const std::string& url);
 
     app::AppContext& context_;
     TaskRunner& tasks_;
@@ -54,6 +78,11 @@ private:
     IImageLoader* images_;
     AppViewState state_;
     std::vector<games::GameInfo> allGames_;
+    std::uint64_t catalogGeneration_ = 0;  // bumped when the catalogue address changes
+    CancellationToken listCancel_;
+    CancellationToken detailCancel_;
+    std::unordered_map<std::string, std::string> urlKeys_;  // url -> sha256, memoised for drawing
+    std::function<void(std::optional<std::string>)> textInputDone_;
     bool quit_ = false;
 };
 

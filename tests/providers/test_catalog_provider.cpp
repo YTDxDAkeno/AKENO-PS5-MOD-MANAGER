@@ -164,3 +164,23 @@ TEST_CASE("server errors are explained") {
     REQUIRE_FALSE(games.ok());
     CHECK(games.error().code == ErrorCode::HttpStatus);
 }
+
+TEST_CASE("a missing index is explained") {
+    test::MockHttpClient http;
+    http.respond(HttpMethod::Get, kBase + "index.json", 404, "not found");
+    auto provider = AkenoCatalogProvider::create(http, kBase).value();
+    auto games = provider->listGames(nullptr);
+    REQUIRE_FALSE(games.ok());
+    CHECK(games.error().code == ErrorCode::NotFound);
+    CHECK(games.error().message.find("no Akeno Catalogue at this address") != std::string::npos);
+}
+
+TEST_CASE("an empty catalogue is valid") {
+    test::MockHttpClient http;
+    http.respond(HttpMethod::Get, kBase + "index.json", 200,
+                 R"({"schemaVersion": 1, "name": "Akeno Catalogue", "updatedAt": "2026-10-07T00:00:00Z", "games": []})");
+    auto provider = AkenoCatalogProvider::create(http, kBase).value();
+    auto games = provider->listGames(nullptr);
+    REQUIRE(games.ok());
+    CHECK(games->empty());
+}

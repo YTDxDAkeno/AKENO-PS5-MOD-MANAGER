@@ -14,6 +14,7 @@ namespace fs = std::filesystem;
 using logging::logger;
 
 AppContext::~AppContext() {
+    catalogue_.reset();
     library_.reset();
     gameProvider_.reset();
     http_.reset();
@@ -146,7 +147,24 @@ Result<std::unique_ptr<AppContext>> AppContext::create(const CommandLine& comman
         ctx->gameProvider_ = std::make_unique<shadowmount::ShadowMountGameProvider>(std::move(client).value());
         ctx->library_ = std::make_unique<games::GameLibrary>(*ctx->gameProvider_, ctx->db_.get());
     }
+
+    // 7. Mod catalogue.
+    ctx->catalogueOverride_ = commandLine.catalogueUrl;
+    ctx->configureCatalogue(commandLine.catalogueUrl.value_or(ctx->settings_.catalogueUrl));
     return ctx;
+}
+
+void AppContext::configureCatalogue(const std::string& url) {
+    auto provider = providers::AkenoCatalogProvider::create(*http_, url);
+    if (!provider) {
+        catalogueError_ = provider.error();
+        catalogue_.reset();
+        logger().error("catalogue", provider.error().describe());
+        return;
+    }
+    catalogueError_.reset();
+    catalogue_ = std::shared_ptr<providers::AkenoCatalogProvider>(std::move(provider).value());
+    logger().info("catalogue", "catalogue address: " + catalogue_->baseUrl());
 }
 
 Status AppContext::saveSettings(const database::Settings& settings) {
@@ -156,7 +174,11 @@ Status AppContext::saveSettings(const database::Settings& settings) {
     }
     database::SettingsStore store(*db_);
     AKENO_TRY(store.save(settings));
+    const bool catalogueChanged = settings.catalogueUrl != settings_.catalogueUrl;
     settings_ = settings;
+    if (catalogueChanged && !catalogueOverride_) {
+        configureCatalogue(settings.catalogueUrl);
+    }
     logger().setMinimumLevel(settings.debugLogging ? logging::LogLevel::Debug : logging::LogLevel::Info);
     logger().info("settings", "settings saved");
     return {};
@@ -173,7 +195,8 @@ SystemChecker AppContext::makeSystemChecker() {
     deps.db = db_.get();
     deps.databaseError = dbError_;
     deps.networkProbeUrl = settings_.networkProbeUrl;
-    deps.build = BuildFeatures{};  // 0.1.0-alpha: browsing, downloading and installation are not implemented
+    deps.build = BuildFeatures{};
+    deps.build.modBrowsing = true;  // Phase 2; downloading and installation are not implemented yet
     return SystemChecker(std::move(deps));
 }
 
@@ -201,7 +224,9 @@ Result<fs::path> AppContext::exportDiagnostics(const SystemReport* lastReport) {
     text += strings::concat("  library.show_ps4 = ", settings_.showPs4Games, "\n");
     text += strings::concat("  library.show_homebrew = ", settings_.showHomebrew, "\n");
     text += strings::concat("  library.sort = ", database::toString(settings_.librarySort), "\n");
-    text += strings::concat("  network.probe_url = ", settings_.networkProbeUrl, "\n\n");
+    text += strings::concat("  network.probe_url = ", settings_.networkProbeUrl, "\n");
+    text += strings::concat("  catalogue.url = ", catalogue_ ? catalogue_->baseUrl() : settings_.catalogueUrl,
+                            catalogueOverride_ ? " (command line)" : "", "\n\n");
 
     if (interrupted_) {
         text += strings::concat("Interrupted operation: ", interrupted_->operationId, " kind=", interrupted_->kind,

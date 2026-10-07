@@ -31,15 +31,21 @@ Options:
 ### Running the desktop build
 
 The desktop build talks to a ShadowMountPlus API just like the console. Without
-a PS5, use the mock server, which serves fictional demo games:
+a PS5, use the mock server, which serves fictional demo games and a demo mod
+catalogue (`tests/fixtures/catalog`, regenerated with `tools/make_demo_catalog.py`):
 
 ```sh
 python3 tools/mock_shadowmount.py &                    # 127.0.0.1:10101
-./build/src/ui/AkenoModManager --data-root /tmp/akeno  # window 1280x720
+./build/src/ui/AkenoModManager --data-root /tmp/akeno \
+  --catalogue-url http://127.0.0.1:10101/catalog/      # window 1280x720
 ```
 
+Without `--catalogue-url` Akeno reads the published catalogue on GitHub, which
+has no entries yet.
+
 Keyboard: arrows move, Enter = ✕, Escape/Backspace = ○, Q/E = L1/R1,
-T = △, Y = □, Tab/F5 = OPTIONS. A connected game controller works through
+T = △, Y = □, Tab/F5 = OPTIONS, Page Up/Down = L2/R2. While a text field
+(search) is open, typing goes into the field; Enter accepts, Escape cancels. A connected game controller works through
 SDL's GameController API.
 
 Headless modes:
@@ -56,6 +62,18 @@ Scripted UI run with screenshots (used by CI):
 SDL_VIDEODRIVER=offscreen ./build/src/ui/AkenoModManager --data-root /tmp/akeno \
   --window 1920x1080 --ui-script "wait:3,confirm,wait:2,next-tab,shot:games,quit"
 # -> /tmp/akeno/logs/games.png
+```
+
+Script steps: `wait:<seconds>`, an action (`confirm`, `back`, `secondary`,
+`tertiary`, `options`, `up`, `down`, `left`, `right`, `prev-tab`, `next-tab`,
+`page-up`, `page-down`), `shot:<name>`, `type:<text>` (completes an open text
+field) and `quit`.
+
+Validate a catalogue directory:
+
+```sh
+./build/akeno-catalog-check catalog                                    # published: https only
+./build/akeno-catalog-check tests/fixtures/catalog --allow-loopback    # demo catalogue
 ```
 
 ## PS5 build

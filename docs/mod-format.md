@@ -173,8 +173,11 @@ in the archive always wins: **PC ONLY** or **INCOMPATIBLE**.
    author's own release.
 2. Test the mod on a PS5 with the stated game version. Record the firmware.
 3. Compute the SHA-256 of the exact file that will be downloaded.
-4. Open a pull request against the catalogue repository with the manifest and
-   the game file entry.
+4. Run `akeno-catalog-check catalog` (built with the host build). It uses the
+   application's parser and checks that the index, game file and manifest
+   agree, including the archive hash when the file is in `catalog/files/`.
+5. Open a pull request with the manifest and the game file entry. See
+   [catalog/README.md](../catalog/README.md).
 
 Catalogue entries for commercial game content, pirated material, or files
 whose licence forbids redistribution are rejected.

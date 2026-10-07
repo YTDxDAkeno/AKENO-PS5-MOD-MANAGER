@@ -127,8 +127,8 @@ TEST_CASE("game library shows games and opens details") {
     host.render(canvas, h.env);
     CHECK(canvas.hasText("Second Game"));
     CHECK(canvas.hasText("Installed mods"));
-    host.handle(Action::Confirm, h.env);  // "Browse mods" is not available yet
-    CHECK(h.toasted("Phase 2"));
+    host.handle(Action::Confirm, h.env);  // "Browse mods": no catalogue in this harness
+    CHECK(h.toasted("catalogue address is not valid"));
     host.handle(Action::Back, h.env);
     CHECK(host.tabDepth(Tab::Games) == 1);
     host.handle(Action::Back, h.env);  // the tab root stays
@@ -212,7 +212,7 @@ TEST_CASE("settings toggles are saved and exit is requested") {
 TEST_CASE("settings can open the system check and the first-run guide") {
     test::UiHarness h;
     SettingsScreen screen;
-    for (int i = 0; i < 5; ++i) screen.handle(Action::Down, h.env);
+    for (int i = 0; i < 6; ++i) screen.handle(Action::Down, h.env);
     auto nav = screen.handle(Action::Confirm, h.env);
     CHECK(nav.kind == NavRequest::Kind::Push);
     CHECK(dynamic_cast<SystemCheckScreen*>(nav.screen.get()) != nullptr);
@@ -226,7 +226,7 @@ TEST_CASE("planned tabs say plainly that the feature is not available") {
     test::UiHarness h;
     ScreenHost host;
     setupScreens(host, h.state);
-    for (Tab tab : {Tab::Discover, Tab::Downloads, Tab::InstalledMods, Tab::Updates}) {
+    for (Tab tab : {Tab::Downloads, Tab::InstalledMods, Tab::Updates}) {
         host.switchTab(tab);
         auto* screen = host.top();
         REQUIRE(screen != nullptr);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/core/Strings.hpp"
+#include "akeno/network/Url.hpp"
 #include "akeno/ui/Screens.hpp"
 #include "akeno/ui/Theme.hpp"
 
@@ -7,9 +8,9 @@ namespace akeno::ui {
 
 namespace {
 
-constexpr int kRowHeight = 68;
-constexpr int kRowGap = 10;
-constexpr int kVisibleRows = 10;
+constexpr int kRowHeight = 62;
+constexpr int kRowGap = 8;
+constexpr int kVisibleRows = SettingsScreen::kItemCount;
 
 const char* sortName(database::LibrarySort sort) {
     switch (sort) {
@@ -27,6 +28,7 @@ std::string itemLabel(SettingsScreen::Item item) {
         case SettingsScreen::Item::LibrarySort: return "Sort games by";
         case SettingsScreen::Item::DebugLogging: return "Detailed (debug) logging";
         case SettingsScreen::Item::ShadowMountPort: return "ShadowMountPlus API port (127.0.0.1)";
+        case SettingsScreen::Item::CatalogueUrl: return "Mod catalogue address";
         case SettingsScreen::Item::RunSystemCheck: return "Run the system check";
         case SettingsScreen::Item::ViewLog: return "View the log";
         case SettingsScreen::Item::ExportDiagnostics: return "Export diagnostic log";
@@ -43,6 +45,11 @@ std::string itemValue(SettingsScreen::Item item, const database::Settings& s) {
         case SettingsScreen::Item::LibrarySort: return sortName(s.librarySort);
         case SettingsScreen::Item::DebugLogging: return s.debugLogging ? "On" : "Off";
         case SettingsScreen::Item::ShadowMountPort: return std::to_string(s.shadowMountPort);
+        case SettingsScreen::Item::CatalogueUrl: {
+            if (s.catalogueUrl == database::kDefaultCatalogueUrl) return "Default";
+            auto url = network::parseUrl(s.catalogueUrl);
+            return url ? url->authority() : "Custom";
+        }
         default: return "";
     }
 }
@@ -55,6 +62,30 @@ void SettingsScreen::save(UiEnv& env, const database::Settings& settings, const 
         env.showToast(message, ToastKind::Success);
     } else {
         env.showToast("Could not save: " + saved.error().message, ToastKind::Error);
+    }
+}
+
+void SettingsScreen::update(UiEnv& env) {
+    std::optional<std::string> text;
+    if (!catalogueUrl_.take(text) || !text) {
+        return;  // nothing arrived, or the user cancelled
+    }
+    database::Settings s = env.state.settings;
+    const std::string url = text->empty() ? std::string(database::kDefaultCatalogueUrl) : *text;
+    if (!database::isValidCatalogueUrl(url)) {
+        env.showToast("Not changed: the address must start with https:// (or http://127.0.0.1 for testing).",
+                      ToastKind::Error);
+        return;
+    }
+    if (url == s.catalogueUrl) {
+        env.showToast("The catalogue address is unchanged.");
+        return;
+    }
+    s.catalogueUrl = url;
+    if (env.state.catalog.overridden) {
+        save(env, s, "Saved. This session keeps the address given with --catalogue-url.");
+    } else {
+        save(env, s, text->empty() ? "Using the default Akeno Catalogue" : "Catalogue address saved");
     }
 }
 
@@ -99,6 +130,10 @@ NavRequest SettingsScreen::handle(Action action, UiEnv& env) {
             break;
         case Item::ShadowMountPort:
             env.showToast("Use LEFT and RIGHT to change the port.");
+            break;
+        case Item::CatalogueUrl:
+            env.commands.requestTextInput("Mod catalogue address (leave empty for the default)", s.catalogueUrl,
+                                          catalogueUrl_.callback());
             break;
         case Item::RunSystemCheck:
             env.commands.runSystemCheck();
@@ -149,6 +184,10 @@ void SettingsScreen::render(ICanvas& canvas, UiEnv& env) {
             explanation = "Only change this if you changed api_port in ShadowMountPlus. Akeno always connects to "
                           "this console (127.0.0.1) and never over the network.";
             break;
+        case Item::CatalogueUrl:
+            explanation = "Where Akeno reads the list of mods. Only https addresses are accepted. Leave the address "
+                          "empty to return to the default Akeno Catalogue.";
+            break;
         case Item::RunSystemCheck: explanation = "Checks ShadowMountPlus, storage, network and the database again."; break;
         case Item::ViewLog: explanation = "Recent messages, newest at the bottom."; break;
         case Item::ExportDiagnostics:
@@ -157,8 +196,21 @@ void SettingsScreen::render(ICanvas& canvas, UiEnv& env) {
         case Item::FirstRunGuide: explanation = "Walks through the environment check again."; break;
         case Item::Exit: explanation = "Closes Akeno and returns to the console."; break;
     }
-    drawWrappedText(canvas, explanation, {side.x + 30, side.y + 30, side.w - 60, side.h - 60},
-                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 40, 9);
+    const int lines = drawWrappedText(canvas, explanation, {side.x + 30, side.y + 30, side.w - 60, side.h - 60},
+                                      TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 40, 9);
+    if (static_cast<Item>(list_.focus()) == Item::CatalogueUrl) {
+        // Addresses have no spaces to wrap at: break them wherever the line is full.
+        int y = side.y + 30 + lines * 40 + 16;
+        std::string_view url = env.state.settings.catalogueUrl;
+        while (!url.empty() && y + 36 <= side.bottom() - 20) {
+            std::size_t take = url.size();
+            while (take > 1 && canvas.measureText(url.substr(0, take), FontRole::Small, false).w > side.w - 60) --take;
+            canvas.drawText(url.substr(0, take), {side.x + 30, y, side.w - 60, 36},
+                            TextStyle{FontRole::Small, theme::kAccent, TextAlign::Left, false});
+            url.remove_prefix(take);
+            y += 36;
+        }
+    }
     if (!env.state.settingsPersistent) {
         canvas.drawText("The database is unavailable: changes cannot be saved.",
                         {side.x, side.bottom() + 20, side.w, 40},

@@ -19,6 +19,7 @@ constexpr std::string_view kSort = "library.sort";
 constexpr std::string_view kSmPort = "shadowmount.port";
 constexpr std::string_view kDebugLogging = "logging.debug";
 constexpr std::string_view kProbeUrl = "network.probe_url";
+constexpr std::string_view kCatalogueUrl = "catalogue.url";
 
 bool parseBool(const std::string& text, bool& out) {
     if (text == "1" || text == "true") {
@@ -41,6 +42,12 @@ bool parseSort(const std::string& text, LibrarySort& out) {
 }
 
 }  // namespace
+
+bool isValidCatalogueUrl(std::string_view url) {
+    auto parsed = network::parseUrl(url);
+    return parsed && (parsed->isHttps() || network::isLoopbackHost(parsed->host)) &&
+           parsed->target.find('?') == std::string::npos;
+}
 
 std::string_view toString(LibrarySort sort) noexcept {
     switch (sort) {
@@ -101,6 +108,13 @@ Result<SettingsLoadResult> SettingsStore::load() {
             reject(kProbeUrl);
         }
     }
+    if (auto it = stored.find(std::string(kCatalogueUrl)); it != stored.end()) {
+        if (isValidCatalogueUrl(it->second)) {
+            s.catalogueUrl = it->second;
+        } else {
+            reject(kCatalogueUrl);
+        }
+    }
     return result;
 }
 
@@ -115,6 +129,7 @@ Status SettingsStore::save(const Settings& settings) {
         {kSmPort, std::to_string(settings.shadowMountPort)},
         {kDebugLogging, settings.debugLogging ? "1" : "0"},
         {kProbeUrl, settings.networkProbeUrl},
+        {kCatalogueUrl, settings.catalogueUrl},
     };
     return db_.transaction([&]() -> Status {
         auto stmt = db_.prepare(

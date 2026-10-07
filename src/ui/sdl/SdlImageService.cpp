@@ -15,9 +15,9 @@ using logging::logger;
 
 namespace {
 
-// Decodes `bytes` and scales the result into a size x size ARGB surface, letterboxing
-// non-square images. Runs on a worker thread.
-SDL_Surface* decodeScaled(const std::string& bytes, int size, std::string& error) {
+// Decodes `bytes` and scales the result into a width x height ARGB surface, letterboxing
+// images with a different aspect ratio. Runs on a worker thread.
+SDL_Surface* decodeScaled(const std::string& bytes, int width, int height, std::string& error) {
     auto info = security::validateImage(bytes);
     if (!info) {
         error = info.error().describe();
@@ -39,18 +39,18 @@ SDL_Surface* decodeScaled(const std::string& bytes, int size, std::string& error
         error = "decoded size differs from the image header";
         return nullptr;
     }
-    SDL_Surface* target = SDL_CreateRGBSurfaceWithFormat(0, size, size, 32, SDL_PIXELFORMAT_ARGB8888);
+    SDL_Surface* target = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_ARGB8888);
     if (target == nullptr) {
         SDL_FreeSurface(decoded);
         error = SDL_GetError();
         return nullptr;
     }
     SDL_FillRect(target, nullptr, SDL_MapRGBA(target->format, 0, 0, 0, 0));
-    const double scale = std::min(static_cast<double>(size) / decoded->w, static_cast<double>(size) / decoded->h);
+    const double scale = std::min(static_cast<double>(width) / decoded->w, static_cast<double>(height) / decoded->h);
     SDL_Rect destination{0, 0, std::max(1, static_cast<int>(decoded->w * scale)),
                          std::max(1, static_cast<int>(decoded->h * scale))};
-    destination.x = (size - destination.w) / 2;
-    destination.y = (size - destination.h) / 2;
+    destination.x = (width - destination.w) / 2;
+    destination.y = (height - destination.h) / 2;
     SDL_SetSurfaceBlendMode(decoded, SDL_BLENDMODE_NONE);
     if (SDL_BlitScaled(decoded, nullptr, target, &destination) != 0) {
         error = SDL_GetError();
@@ -65,8 +65,12 @@ SDL_Surface* decodeScaled(const std::string& bytes, int size, std::string& error
 }  // namespace
 
 SdlImageService::SdlImageService(SDL_Renderer* renderer, TaskRunner& tasks, MainThreadQueue& mainQueue,
-                                 std::size_t maxTextures)
-    : renderer_(renderer), tasks_(tasks), mainQueue_(mainQueue), maxTextures_(std::max<std::size_t>(8, maxTextures)) {}
+                                 std::size_t maxTextures, std::uint64_t maxPixels)
+    : renderer_(renderer),
+      tasks_(tasks),
+      mainQueue_(mainQueue),
+      maxTextures_(std::max<std::size_t>(8, maxTextures)),
+      maxPixels_(std::max<std::uint64_t>(4ull * 1024 * 1024, maxPixels)) {}
 
 SdlImageService::~SdlImageService() {
     alive_->store(false);
@@ -77,7 +81,8 @@ SdlImageService::~SdlImageService() {
     }
 }
 
-void SdlImageService::ensure(const std::string& key, int size, std::function<Result<std::string>()> fetch) {
+void SdlImageService::ensure(const std::string& key, int width, int height,
+                             std::function<Result<std::string>()> fetch) {
     auto it = entries_.find(key);
     if (it != entries_.end()) {
         it->second.lastUsed = frame_;
@@ -86,12 +91,12 @@ void SdlImageService::ensure(const std::string& key, int size, std::function<Res
     entries_[key] = Entry{State::Loading, nullptr, frame_};
     std::weak_ptr<std::atomic<bool>> alive = alive_;
     MainThreadQueue* queue = &mainQueue_;
-    tasks_.submit([this, queue, key, size, fetch = std::move(fetch), alive] {
+    tasks_.submit([this, queue, key, width, height, fetch = std::move(fetch), alive] {
         auto bytes = fetch();
         std::string error;
         SDL_Surface* surface = nullptr;
         if (bytes) {
-            surface = decodeScaled(bytes.value(), size, error);
+            surface = decodeScaled(bytes.value(), width, height, error);
         } else {
             error = bytes.error().describe();
         }
@@ -112,6 +117,7 @@ void SdlImageService::ensure(const std::string& key, int size, std::function<Res
                 return;
             }
             entry->second.texture = SDL_CreateTextureFromSurface(renderer_, surface);
+            entry->second.pixels = static_cast<std::uint64_t>(surface->w) * static_cast<std::uint64_t>(surface->h);
             SDL_FreeSurface(surface);
             entry->second.state = entry->second.texture != nullptr ? State::Ready : State::Failed;
             changed_ = true;
@@ -143,10 +149,14 @@ bool SdlImageService::takeChanged() {
 
 void SdlImageService::evictIfNeeded() {
     std::size_t ready = 0;
+    std::uint64_t pixels = 0;
     for (const auto& [key, entry] : entries_) {
-        if (entry.state == State::Ready) ++ready;
+        if (entry.state == State::Ready) {
+            ++ready;
+            pixels += entry.pixels;
+        }
     }
-    while (ready > maxTextures_) {
+    while (ready > maxTextures_ || pixels > maxPixels_) {
         auto oldest = entries_.end();
         for (auto it = entries_.begin(); it != entries_.end(); ++it) {
             if (it->second.state != State::Ready || it->second.lastUsed + 1 >= frame_) continue;  // in use now
@@ -154,6 +164,7 @@ void SdlImageService::evictIfNeeded() {
         }
         if (oldest == entries_.end()) break;
         SDL_DestroyTexture(oldest->second.texture);
+        pixels -= oldest->second.pixels;
         entries_.erase(oldest);
         --ready;
     }

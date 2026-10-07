@@ -62,6 +62,108 @@ void saveScreenshot(SDL_Renderer* renderer, app::AppContext& context, const std:
     SDL_FreeSurface(surface);
 }
 
+// Connects AppViewState::textEntry to SDL text input. On desktop builds the typed text arrives as
+// SDL_TEXTINPUT events and is shown by Akeno. On the console SDL_StartTextInput opens the system
+// keyboard (sceImeDialog in the ps5-payload-dev SDL port): OK delivers the text followed by a
+// RETURN key; Cancel delivers nothing, so a keyboard that closes without RETURN means "cancel".
+class TextInputBridge {
+public:
+    TextInputBridge(SDL_Window* window, AppController& controller, ScreenHost& host)
+        : window_(window), controller_(controller), host_(host), systemKeyboard_(SDL_HasScreenKeyboardSupport() == SDL_TRUE) {}
+
+    ~TextInputBridge() {
+        if (active_) SDL_StopTextInput();
+    }
+
+    bool active() const { return active_; }
+
+    // Starts or stops SDL text input to match the model. Call once per frame before events.
+    void sync(double now) {
+        const bool wanted = controller_.state().textEntry.active;
+        if (wanted && !active_) {
+            start(now);
+        } else if (!wanted && active_) {
+            SDL_StopTextInput();
+            active_ = false;
+        }
+    }
+
+    // Returns true when the event was consumed by the text entry.
+    bool handleEvent(const SDL_Event& event) {
+        if (!active_ || !controller_.state().textEntry.active) return false;
+        switch (event.type) {
+            case SDL_TEXTINPUT:
+                controller_.appendTextInput(event.text.text);
+                return true;
+            case SDL_TEXTEDITING:
+                return true;
+            case SDL_KEYDOWN:
+                switch (event.key.keysym.sym) {
+                    case SDLK_RETURN:
+                    case SDLK_KP_ENTER: controller_.finishTextInput(true); break;
+                    case SDLK_ESCAPE: controller_.finishTextInput(false); break;
+                    case SDLK_BACKSPACE: controller_.eraseTextInput(); break;
+                    default: break;
+                }
+                return true;
+            default:
+                return false;  // key releases still reach the input mapper, so nothing stays "held"
+        }
+    }
+
+    // Controller buttons while the entry is open. Returns true when the action was consumed.
+    bool handleAction(Action action, double now) {
+        if (!active_ || !controller_.state().textEntry.active) return false;
+        if (systemKeyboard_ && SDL_IsScreenKeyboardShown(window_) == SDL_TRUE) {
+            return true;  // the system keyboard has the controller
+        }
+        if (action == Action::Back) {
+            controller_.finishTextInput(false);
+        } else if (action == Action::Confirm) {
+            if (systemKeyboard_) {
+                SDL_StopTextInput();  // open the keyboard again
+                start(now);
+            } else {
+                controller_.finishTextInput(true);
+            }
+        }
+        return true;
+    }
+
+    // Detects a system keyboard that was closed with Cancel. Call after the events of a frame.
+    void afterEvents(double now) {
+        if (!systemKeyboard_ || !active_ || !controller_.state().textEntry.active) return;
+        if (SDL_IsScreenKeyboardShown(window_) == SDL_TRUE) {
+            seen_ = true;
+        } else if (seen_) {
+            controller_.finishTextInput(false);
+        } else if (!warned_ && now - startedAt_ > 4.0) {
+            warned_ = true;
+            logger().warn("ui", "the system keyboard did not open");
+            host_.addToast("The keyboard did not open. Press CROSS to try again or CIRCLE to cancel.",
+                           ToastKind::Warning, now);
+        }
+    }
+
+private:
+    void start(double now) {
+        SDL_StartTextInput();
+        active_ = true;
+        seen_ = false;
+        warned_ = false;
+        startedAt_ = now;
+    }
+
+    SDL_Window* window_;
+    AppController& controller_;
+    ScreenHost& host_;
+    bool systemKeyboard_;
+    bool active_ = false;
+    bool seen_ = false;
+    bool warned_ = false;
+    double startedAt_ = 0.0;
+};
+
 }  // namespace
 
 int runSdlApplication(app::AppContext& context, const app::CommandLine& commandLine) {
@@ -140,6 +242,7 @@ int runSdlApplication(app::AppContext& context, const app::CommandLine& commandL
         AppController controller(context, tasks, mainQueue, &images);
         ScreenHost host;
         setupScreens(host, controller.state());
+        TextInputBridge textInput(session.window, controller, host);
         controller.start();
         logger().info("ui", "user interface started");
 
@@ -158,18 +261,25 @@ int runSdlApplication(app::AppContext& context, const app::CommandLine& commandL
                       [&host, t](std::string text, ToastKind kind) { host.addToast(std::move(text), kind, t); }};
 
             actions.clear();
+            textInput.sync(t);
             SDL_Event event;
+            auto dispatch = [&](const SDL_Event& e) {
+                if (e.type == SDL_QUIT) running = false;
+                if (textInput.handleEvent(e)) {
+                    dirty = true;
+                    return;
+                }
+                input.handleEvent(e, t, actions);
+            };
             // Idle politely when nothing changes: wait for input instead of spinning.
             const bool animating = host.animating(env) || mainQueue.pending() > 0;
             if (!dirty && !animating && SDL_WaitEventTimeout(&event, 50) == 1) {
-                if (event.type == SDL_QUIT) running = false;
-                input.handleEvent(event, t, actions);
+                dispatch(event);
                 dirty = true;
             }
             while (SDL_PollEvent(&event) == 1) {
-                if (event.type == SDL_QUIT) running = false;
                 if (event.type == SDL_WINDOWEVENT) dirty = true;
-                input.handleEvent(event, t, actions);
+                dispatch(event);
             }
             input.update(t, actions);
             std::vector<std::string> screenshots;
@@ -177,13 +287,20 @@ int runSdlApplication(app::AppContext& context, const app::CommandLine& commandL
                 auto tick = script->update(t);
                 actions.insert(actions.end(), tick.actions.begin(), tick.actions.end());
                 screenshots = std::move(tick.screenshots);
+                for (auto& text : tick.typed) {
+                    if (controller.state().textEntry.active) {
+                        controller.setTextInput(std::move(text));
+                        controller.finishTextInput(true);
+                    }
+                }
                 if (tick.quit) running = false;
                 dirty = true;
             }
             for (Action action : actions) {
-                host.handle(action, env);
+                if (!textInput.handleAction(action, t)) host.handle(action, env);
                 dirty = true;
             }
+            textInput.afterEvents(t);
             if (mainQueue.drain() > 0) dirty = true;
             if (images.takeChanged()) dirty = true;
             if (controller.quitRequested()) running = false;

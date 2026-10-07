@@ -30,6 +30,10 @@ TEST_CASE("headless modes and options") {
     CHECK(cl.shadowMountPort == std::optional<int>(10102));
     CHECK(cl.verbose);
     CHECK(parse({"--list-games"}).mode == RunMode::ListGames);
+    auto catalogue = parse({"--catalogue-url", "http://127.0.0.1:10101/catalog/"});
+    CHECK(catalogue.errors.empty());
+    CHECK(catalogue.catalogueUrl == std::optional<std::string>("http://127.0.0.1:10101/catalog/"));
+    CHECK_FALSE(parse({"--catalogue-url"}).errors.empty());
     auto window = parse({"--window", "1920x1080"});
     CHECK(window.windowWidth == 1920);
     CHECK(window.windowHeight == 1080);

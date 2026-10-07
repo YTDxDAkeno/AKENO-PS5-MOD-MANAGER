@@ -119,6 +119,14 @@ std::string truncateUtf8(std::string_view text, std::size_t maxBytes) {
     return std::string(text.substr(0, cut));
 }
 
+void popBackUtf8(std::string& text) {
+    while (!text.empty()) {
+        const auto c = static_cast<unsigned char>(text.back());
+        text.pop_back();
+        if ((c & 0xC0) != 0x80) break;  // reached the lead byte
+    }
+}
+
 std::string sanitizeForDisplay(std::string_view text, std::size_t maxBytes) {
     std::string out;
     out.reserve(text.size() < maxBytes ? text.size() : maxBytes);

@@ -3,6 +3,8 @@
 // implementation that records what was requested.
 #pragma once
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -58,6 +60,14 @@ public:
     bool quit = false;
     bool failSave = false;
     std::vector<logging::LogRecord> logs;
+    int catalogLoads = 0;
+    bool lastCatalogForce = false;
+    std::vector<providers::SearchQuery> listRequests;
+    std::vector<providers::ModRef> detailRequests;
+    std::vector<std::string> remoteImages;  // urls requested
+    std::string textPrompt;
+    std::string textInitial;
+    std::function<void(std::optional<std::string>)> textDone;
 
     void runSystemCheck() override { ++systemChecks; }
     void refreshLibrary() override { ++libraryRefreshes; }
@@ -78,7 +88,48 @@ public:
     std::string gameIconKey(const games::GameInfo& game, int size) override {
         return game.hasIcon ? "icon:" + game.titleId + ":" + std::to_string(size) : std::string();
     }
+    std::string remoteImageKey(const std::string& url, int width, int height) override {
+        if (url.empty()) return {};
+        remoteImages.push_back(url);
+        return "remote:" + url + ":" + std::to_string(width) + "x" + std::to_string(height);
+    }
     void requestQuit() override { quit = true; }
+
+    // Records the request and marks the views as loading, like the real controller.
+    void loadCatalogGames(bool forceRefresh) override {
+        ++catalogLoads;
+        lastCatalogForce = forceRefresh;
+        state_.catalog.loading = true;
+    }
+    void loadModList(const providers::SearchQuery& query) override {
+        listRequests.push_back(query);
+        state_.modList.query = query;
+        state_.modList.loading = true;
+        state_.modList.error.reset();
+        ++state_.modList.request;
+    }
+    void loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>&) override {
+        detailRequests.push_back(ref);
+        state_.modDetail.ref = ref;
+        state_.modDetail.loading = true;
+        ++state_.modDetail.request;
+    }
+    void requestTextInput(const std::string& prompt, const std::string& initial,
+                          std::function<void(std::optional<std::string>)> done) override {
+        textPrompt = prompt;
+        textInitial = initial;
+        textDone = std::move(done);
+        state_.textEntry.active = true;
+        state_.textEntry.prompt = prompt;
+        state_.textEntry.text = initial;
+    }
+    // Completes the pending text request (nullopt = cancelled).
+    void completeText(std::optional<std::string> text) {
+        state_.textEntry = ui::TextEntryView{};
+        auto done = std::move(textDone);
+        textDone = nullptr;
+        if (done) done(std::move(text));
+    }
 
 private:
     ui::AppViewState& state_;

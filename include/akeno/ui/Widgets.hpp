@@ -60,7 +60,7 @@ private:
 };
 
 struct ButtonHint {
-    enum class Button { Cross, Circle, Triangle, Square, Options, L1R1, L2R2 };
+    enum class Button { Cross, Circle, Triangle, Square, Options, L1R1, L2R2, LeftRight };
     Button button;
     std::string label;
 };
@@ -81,6 +81,8 @@ void spinner(ICanvas& canvas, int centerX, int centerY, double time);
 // Coloured initials tile used when a game has no icon yet.
 void placeholderArt(ICanvas& canvas, const Rect& rect, std::string_view name);
 void progressBar(ICanvas& canvas, const Rect& rect, double fraction, Color color);
+// A panel with a coloured edge, a heading and a short explanation (empty and error states).
+void messagePanel(ICanvas& canvas, const Rect& rect, std::string_view heading, std::string_view body, Color accent);
 
 }  // namespace draw
 

@@ -17,14 +17,26 @@ Nothing outside a provider knows which website a mod came from.
 Providers return `Unsupported` with an explanation when the service does not
 allow an operation. They never work around a provider's rules.
 
-## Planned providers
+## Providers
 
-### Akeno Catalogue (Phase 2): the first and default provider
+### Akeno Catalogue (implemented): the first and default provider
 
 * Curated list of mods that are known or expected to work on PS5, so users
   do not see thousands of Windows-only PC mods.
 * Static JSON on GitHub ([mod-format.md](mod-format.md)), HTTPS, no account.
+  Published from [`catalog/`](../catalog/), which stays empty until entries
+  have been tested on hardware.
 * Every entry has a size and SHA-256. Native-code mods are not accepted.
+* `AkenoCatalogProvider` builds request paths only from validated
+  identifiers, limits every document's size, caches documents for 10 minutes
+  and computes labels with `compatibility::evaluateManifest` for the
+  installed game version.
+* The address is a setting (https only; `http://127.0.0.1` for local testing)
+  and can be overridden for one session with `--catalogue-url`.
+* Privacy: Akeno downloads the whole `index.json` and matches installed games
+  locally; the list of installed games is never sent. Opening a game's mods
+  downloads that game's file, so the catalogue host (GitHub) can see which
+  games' mods are browsed, as with any website.
 
 ### GitHub releases (Phase 7)
 

@@ -6,8 +6,9 @@ anything.
 
 ## [0.1.0-alpha] - unreleased
 
-First development release: **Phase 0 (research) and Phase 1 (safe game browser)**.
-Compiled and unit tested on a Linux host. **Not tested on PS5 hardware.**
+First development release: **Phase 0 (research), Phase 1 (safe game browser) and
+Phase 2 (online mod browser)**. Compiled and unit tested on a Linux host.
+**Not tested on PS5 hardware.**
 
 ### Added
 - Research notes on ShadowMountPlus 1.7, the PS5 payload SDK, pacbrew libraries,
@@ -29,6 +30,24 @@ Compiled and unit tested on a Linux host. **Not tested on PS5 hardware.**
 - HTTPS client (libcurl + OpenSSL) with mandatory certificate verification,
   embedded CA bundle on PS5, size limits, timeouts and cancellation.
 - `IModProvider` interface for the provider phases.
+- Akeno Catalogue provider (schema v1): validated JSON documents, caching,
+  featured / newest / best compatibility / popular order, text search.
+- Compatibility rules: labels computed against the installed title ID and game
+  version (VERIFIED only for a listed version; otherwise EXPERIMENTAL with the
+  reason), risk level, PC-only and native-code handling.
+- Discover tab, per-game mod list, mod details (compatibility checklist,
+  description, files with SHA-256, dependencies) and a screenshot viewer.
+  "Download & install" explains that it is not available yet.
+- "Browse mods" on the game details screen when the catalogue lists the game.
+- Search through the system keyboard on PS5 (typed text on desktop builds).
+- Remote images over HTTPS: validated before decoding, cached in
+  `cache/images/` under URL hashes, bounded cache and texture memory.
+- Setting and `--catalogue-url` option for the catalogue address (https only,
+  loopback http for local testing).
+- `akeno-catalog-check`: validates a catalogue directory with the
+  application's parser, cross-checks documents and archive hashes.
+- Empty published catalogue in `catalog/`; fictional demo catalogue served by
+  the mock server.
 - `AkenoSelfCheck.elf`: headless system check payload for first hardware tests.
 - PS5 packaging: `AkenoModManager.elf`, websrv homebrew folder zip, `SHA256SUMS`.
 - Developer tools: mock ShadowMountPlus API server, `--ui-script` automation,

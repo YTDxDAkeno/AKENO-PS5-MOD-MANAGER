@@ -4,6 +4,8 @@
 // Tests drive screens with a hand-built state and a fake command implementation.
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,6 +16,7 @@
 #include "akeno/database/SettingsStore.hpp"
 #include "akeno/games/GameInfo.hpp"
 #include "akeno/logging/Logger.hpp"
+#include "akeno/providers/IModProvider.hpp"
 
 namespace akeno::ui {
 
@@ -51,9 +54,59 @@ struct AboutInfo {
     std::string databaseEngine;
 };
 
+struct CatalogView {
+    bool configured = false;                    // a valid catalogue address is set
+    std::string source;                         // catalogue address shown to the user
+    bool overridden = false;                    // set for this session with --catalogue-url
+    std::optional<Error> configurationError;
+    bool loading = false;
+    bool loaded = false;
+    std::optional<Error> error;
+    std::vector<providers::ProviderGame> games;
+
+    const providers::ProviderGame* findByTitleId(std::string_view titleId) const {
+        for (const auto& game : games) {
+            for (const auto& id : game.titleIds) {
+                if (id == titleId) return &game;
+            }
+        }
+        return nullptr;
+    }
+};
+
+// The mod list currently shown (one list at a time).
+struct ModListView {
+    std::uint64_t request = 0;                  // increases with every load; stale results are dropped
+    providers::SearchQuery query;
+    bool loading = false;
+    std::optional<Error> error;
+    std::optional<providers::ModPage> page;
+};
+
+struct ModDetailView {
+    std::uint64_t request = 0;
+    providers::ModRef ref;
+    bool loading = false;
+    std::optional<Error> error;
+    std::optional<providers::ModDetails> details;
+};
+
+// Text entry (search). On the console the system keyboard is shown; on desktop builds the
+// typed text is displayed by Akeno.
+struct TextEntryView {
+    bool active = false;
+    bool systemKeyboard = false;                // the console's own keyboard dialog is used
+    std::string prompt;
+    std::string text;
+};
+
 struct AppViewState {
     SystemCheckView systemCheck;
     LibraryView library;
+    CatalogView catalog;
+    ModListView modList;
+    ModDetailView modDetail;
+    TextEntryView textEntry;
     database::Settings settings;
     bool settingsPersistent = true;            // false when the database is unavailable
     std::optional<RecoveryView> recovery;
@@ -77,7 +130,18 @@ public:
     virtual void postponeRecovery() = 0;
     // Returns the image key for a game's icon at `size` pixels and starts loading it if needed.
     virtual std::string gameIconKey(const games::GameInfo& game, int size) = 0;
+    // Same for an image on the web (https only), scaled to fit width x height.
+    virtual std::string remoteImageKey(const std::string& url, int width, int height) = 0;
     virtual void requestQuit() = 0;
+
+    // Mod catalogue (Phase 2).
+    virtual void loadCatalogGames(bool forceRefresh) = 0;
+    virtual void loadModList(const providers::SearchQuery& query) = 0;
+    virtual void loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>& game) = 0;
+
+    // Asks the user for text; `done` receives the text, or nullopt when cancelled.
+    virtual void requestTextInput(const std::string& prompt, const std::string& initial,
+                                  std::function<void(std::optional<std::string>)> done) = 0;
 };
 
 }  // namespace akeno::ui

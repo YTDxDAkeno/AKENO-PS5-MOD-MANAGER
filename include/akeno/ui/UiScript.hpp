@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Scripted input for automated UI checks and screenshots (developer option --ui-script).
 //   "wait:2,next-tab,confirm,shot:games,quit"
-// Steps: wait:<seconds>, an action name (see toString(Action)), shot:<name>, quit.
+// Steps: wait:<seconds>, an action name (see toString(Action)), shot:<name>, type:<text>
+// (completes an open text entry with <text>; printable ASCII without commas), quit.
 #pragma once
 
 #include <optional>
@@ -15,11 +16,11 @@
 namespace akeno::ui {
 
 struct ScriptStep {
-    enum class Kind { Wait, Press, Screenshot, Quit };
+    enum class Kind { Wait, Press, Screenshot, Type, Quit };
     Kind kind = Kind::Wait;
     double seconds = 0.0;
     Action action = Action::Confirm;
-    std::string name;  // screenshot name, a safe file component
+    std::string name;  // screenshot name (a safe file component) or the text to type
 };
 
 Result<std::vector<ScriptStep>> parseUiScript(std::string_view text);
@@ -31,6 +32,7 @@ public:
     struct Tick {
         std::vector<Action> actions;
         std::vector<std::string> screenshots;
+        std::vector<std::string> typed;
         bool quit = false;
     };
 

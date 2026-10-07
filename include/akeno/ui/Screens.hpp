@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,7 @@ public:
 
     explicit GameDetailScreen(std::string titleId) : titleId_(std::move(titleId)) {}
     std::string title() const override { return "Game details"; }
+    void update(UiEnv& env) override;
     NavRequest handle(Action action, UiEnv& env) override;
     void render(ICanvas& canvas, UiEnv& env) override;
     std::vector<ButtonHint> hints(const UiEnv& env) const override;
@@ -53,6 +55,93 @@ public:
 private:
     std::string titleId_;
     FocusList actions_;
+    bool catalogRequested_ = false;
+};
+
+// Discover tab: the games of the Akeno Catalogue, installed games first.
+class DiscoverScreen final : public Screen {
+public:
+    static constexpr int kVisibleRows = 5;
+
+    std::string title() const override { return "Discover"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool animating(const UiEnv& env) const override { return env.state.catalog.loading; }
+    const FocusList& list() const { return list_; }
+
+private:
+    FocusList list_;
+    std::optional<std::string> requestedSource_;
+};
+
+// The mods of one catalogue game, with order, search and compatibility labels for the
+// installed version (when the game is installed).
+class ModBrowserScreen final : public Screen {
+public:
+    static constexpr int kVisibleRows = 5;
+    static constexpr int kThumbWidth = 192;
+    static constexpr int kThumbHeight = 108;
+
+    ModBrowserScreen(std::string providerGameId, std::string gameName, std::optional<providers::GameContext> game);
+    std::string title() const override { return "Mods"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool animating(const UiEnv& env) const override { return env.state.modList.loading; }
+    const providers::SearchQuery& query() const { return query_; }
+    const FocusList& list() const { return list_; }
+
+private:
+    std::string gameName_;
+    providers::SearchQuery query_;
+    FocusList list_;
+    TextRequest search_;
+};
+
+class ModDetailScreen final : public Screen {
+public:
+    static constexpr int kHeroWidth = 640;
+    static constexpr int kHeroHeight = 360;
+
+    ModDetailScreen(providers::ModRef ref, std::string gameName, std::optional<providers::GameContext> game);
+    std::string title() const override { return "Mod details"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool animating(const UiEnv& env) const override { return env.state.modDetail.loading; }
+    const providers::ModRef& ref() const { return ref_; }
+    int scroll() const { return scroll_; }
+
+private:
+    const providers::ModDetails* details(const UiEnv& env) const;
+
+    providers::ModRef ref_;
+    std::string gameName_;
+    std::optional<providers::GameContext> game_;
+    FocusList actions_;
+    int scroll_ = 0;
+    int maxScroll_ = 0;
+    bool requested_ = false;
+};
+
+class ScreenshotViewerScreen final : public Screen {
+public:
+    ScreenshotViewerScreen(std::vector<providers::Screenshot> screenshots, int index)
+        : screenshots_(std::move(screenshots)), index_(index) {}
+    std::string title() const override { return "Screenshots"; }
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool fullScreen() const override { return true; }
+    int index() const { return index_; }
+
+private:
+    std::vector<providers::Screenshot> screenshots_;
+    int index_ = 0;
 };
 
 // Tabs whose features belong to later phases. They say so plainly instead of pretending.
@@ -79,15 +168,17 @@ public:
         LibrarySort,
         DebugLogging,
         ShadowMountPort,
+        CatalogueUrl,
         RunSystemCheck,
         ViewLog,
         ExportDiagnostics,
         FirstRunGuide,
         Exit,
     };
-    static constexpr int kItemCount = 10;
+    static constexpr int kItemCount = 11;
 
     std::string title() const override { return "Settings"; }
+    void update(UiEnv& env) override;
     NavRequest handle(Action action, UiEnv& env) override;
     void render(ICanvas& canvas, UiEnv& env) override;
     std::vector<ButtonHint> hints(const UiEnv& env) const override;
@@ -96,6 +187,7 @@ public:
 private:
     void save(UiEnv& env, const database::Settings& settings, const std::string& message);
     FocusList list_;
+    TextRequest catalogueUrl_;
 };
 
 class AboutScreen final : public Screen {

@@ -193,6 +193,11 @@ void buttonGlyph(ICanvas& canvas, int cx, int cy, ButtonHint::Button button) {
             canvas.drawText("L2 R2", {cx - 44, cy - 16, 88, 32},
                             TextStyle{FontRole::Small, theme::kTextPrimary, TextAlign::Center, true});
             break;
+        case ButtonHint::Button::LeftRight:
+            canvas.fillRoundedRect({cx - 44, cy - 16, 88, 32}, 8, theme::kPanelRaised);
+            canvas.drawText("\xE2\x97\x80 \xE2\x96\xB6", {cx - 44, cy - 16, 88, 32},
+                            TextStyle{FontRole::Small, theme::kTextPrimary, TextAlign::Center, true});
+            break;
     }
 }
 
@@ -204,7 +209,7 @@ void footerHints(ICanvas& canvas, const std::vector<ButtonHint>& hints) {
     for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
         const int labelWidth = canvas.measureText(it->label, FontRole::Caption, false).w;
         const bool wideGlyph = it->button == ButtonHint::Button::Options || it->button == ButtonHint::Button::L1R1 ||
-                               it->button == ButtonHint::Button::L2R2;
+                               it->button == ButtonHint::Button::L2R2 || it->button == ButtonHint::Button::LeftRight;
         const int glyphWidth = wideGlyph ? 92 : 44;
         x -= labelWidth;
         canvas.drawText(it->label, {x, footer.y, labelWidth, footer.h},
@@ -261,6 +266,16 @@ void progressBar(ICanvas& canvas, const Rect& rect, double fraction, Color color
     if (filled > rect.h) {
         canvas.fillRoundedRect({rect.x, rect.y, filled, rect.h}, rect.h / 2, color);
     }
+}
+
+void messagePanel(ICanvas& canvas, const Rect& rect, std::string_view heading, std::string_view body, Color accent) {
+    panel(canvas, rect);
+    canvas.fillRoundedRect({rect.x, rect.y, 10, rect.h}, 5, accent);
+    canvas.drawText(heading, {rect.x + 50, rect.y + 36, rect.w - 100, 56},
+                    TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+    drawWrappedText(canvas, body, {rect.x + 50, rect.y + 110, rect.w - 100, rect.h - 130},
+                    TextStyle{FontRole::Body, theme::kTextSecondary, TextAlign::Left, false}, 46,
+                    std::max(1, (rect.h - 130) / 46));
 }
 
 }  // namespace draw

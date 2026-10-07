@@ -43,20 +43,25 @@ jobs:
 
       - name: Headless system check against the mock ShadowMountPlus API
         run: |
-          python3 tools/mock_shadowmount.py --port 10111 &
+          # Default port 10101: the demo catalogue's file addresses use it.
+          python3 tools/mock_shadowmount.py &
           sleep 1
-          ./build/src/ui/AkenoModManager --self-check --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
-          ./build/AkenoSelfCheck --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
-          ./build/src/ui/AkenoModManager --list-games --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
+          ./build/src/ui/AkenoModManager --self-check --data-root "$RUNNER_TEMP/akeno"
+          ./build/AkenoSelfCheck --data-root "$RUNNER_TEMP/akeno"
+          ./build/src/ui/AkenoModManager --list-games --data-root "$RUNNER_TEMP/akeno"
 
       - name: User interface smoke test (offscreen)
         env:
           SDL_VIDEODRIVER: offscreen
         run: |
-          ./build/src/ui/AkenoModManager --data-root "$RUNNER_TEMP/akeno-ui" --shadowmount-port 10111 \
-            --window 1920x1080 --ui-script \
-            "wait:3,shot:01-first-run,confirm,wait:3,confirm,wait:1,confirm,wait:2,confirm,confirm,confirm,confirm,wait:2,shot:02-home,next-tab,wait:2,shot:03-games,confirm,wait:1,shot:04-details,back,prev-tab,prev-tab,shot:05-settings,quit"
+          ./build/src/ui/AkenoModManager --data-root "$RUNNER_TEMP/akeno-ui" \
+            --catalogue-url http://127.0.0.1:10101/catalog/ --window 1920x1080 --ui-script \
+            "wait:3,shot:01-first-run,confirm,wait:3,confirm,wait:1,confirm,wait:2,confirm,confirm,confirm,confirm,wait:2,shot:02-home,next-tab,wait:2,shot:03-games,confirm,wait:2,shot:04-details,back,next-tab,wait:2,shot:06-discover,confirm,wait:2,shot:07-mods,tertiary,type:hair,wait:2,shot:08-search,options,wait:2,confirm,wait:2,shot:09-mod-details,down,confirm,wait:2,shot:10-screenshot,back,back,back,next-tab,next-tab,next-tab,next-tab,shot:05-settings,quit"
           ls "$RUNNER_TEMP/akeno-ui/logs"
+          for shot in 01-first-run 02-home 03-games 04-details 05-settings 06-discover 07-mods 08-search 09-mod-details 10-screenshot; do
+            test -s "$RUNNER_TEMP/akeno-ui/logs/$shot.png"
+          done
+          grep -q "catalogue loaded: 3 games" "$RUNNER_TEMP/akeno-ui/logs/akeno.log"
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4

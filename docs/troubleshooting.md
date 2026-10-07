@@ -51,6 +51,25 @@ with certificate verification. Failure messages:
 
 Networking is not needed for the game library.
 
+## Discover says "Could not load the Akeno Catalogue"
+
+* *There is no Akeno Catalogue at this address*: the catalogue address in
+  Settings is wrong, or the server has no `index.json` there. Leave the
+  address empty in Settings to return to the default.
+* Connection and certificate errors: see "Networking shows FAILED" above.
+* The catalogue is cached for ten minutes; OPTIONS in Discover reloads it.
+
+## "The catalogue is empty"
+
+The published catalogue has no entries until mods have been tested on PS5
+hardware. This is expected in 0.1.0-alpha.
+
+## The search keyboard does not open (PS5)
+
+Akeno opens the console's keyboard dialog. If it does not appear within a few
+seconds, a message offers to try again (✕) or cancel (○). Please report it with
+the log, since this is not hardware tested yet.
+
 ## "The database was created by a newer version"
 
 You ran a newer Akeno before. The database is left untouched. Update Akeno, or

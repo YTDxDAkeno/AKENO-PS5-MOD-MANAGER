@@ -5,6 +5,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -45,11 +46,32 @@ struct NavRequest {
     static NavRequest switchTab(Tab tab) { return {Kind::SwitchTab, nullptr, tab}; }
 };
 
+// Receives the result of IAppCommands::requestTextInput. The callback only writes into a shared
+// slot, so it stays safe even if the screen that asked has been closed in the meantime.
+class TextRequest {
+public:
+    std::function<void(std::optional<std::string>)> callback();
+    // True once when a result has arrived; `text` is nullopt when the user cancelled.
+    bool take(std::optional<std::string>& text);
+    bool pending() const { return slot_->pending; }
+
+private:
+    struct Slot {
+        bool pending = false;
+        bool ready = false;
+        std::optional<std::string> text;
+    };
+    std::shared_ptr<Slot> slot_ = std::make_shared<Slot>();
+};
+
 class Screen {
 public:
     virtual ~Screen() = default;
 
     virtual std::string title() const = 0;
+    // Called every frame before render() for the visible screen: starts lazy loads and picks
+    // up results (for example of a text request).
+    virtual void update(UiEnv& /*env*/) {}
     virtual NavRequest handle(Action action, UiEnv& env) = 0;
     // Draws into theme::kContent, or the whole screen when fullScreen() is true.
     virtual void render(ICanvas& canvas, UiEnv& env) = 0;
@@ -92,6 +114,7 @@ private:
     void apply(NavRequest request, std::vector<std::unique_ptr<Screen>>& stack, bool isFlow);
     void renderChrome(ICanvas& canvas, UiEnv& env);
     void renderToasts(ICanvas& canvas, double now);
+    void renderTextEntry(ICanvas& canvas, const UiEnv& env);
 
     std::array<std::vector<std::unique_ptr<Screen>>, kTabCount> tabs_;
     std::vector<std::unique_ptr<Screen>> flows_;

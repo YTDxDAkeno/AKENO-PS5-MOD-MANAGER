@@ -2,7 +2,8 @@
 
 **A console-native mod manager for jailbroken PlayStation 5 consoles. The goal: browse, download, verify, install, manage and remove mods on the PS5 itself, with no PC needed.**
 
-> **Status: 0.1.0-alpha, experimental.** This release is **Phase 1: a safe game library browser**.
+> **Status: 0.1.0-alpha, experimental.** This release covers **Phase 1 (a safe game library
+> browser)** and **Phase 2 (an online mod browser for the Akeno Catalogue)**.
 > It **does not download or install mods yet**, and it **never modifies game files**.
 > It has been **compiled and unit tested on a Linux host**. It has **not been tested on PS5 hardware**.
 > Do not read anything in this repository as "works on firmware 12.20" until it appears in the
@@ -43,7 +44,9 @@ ShadowMountPlus's per-title *backport* overlay (see [docs/shadowmount.md](docs/s
 | Controller UI (DualSense), TV-sized layout | implemented, tested on desktop only |
 | Settings, logging with secret redaction, diagnostic export | implemented, unit tested |
 | Crash-recovery journal and startup recovery prompt | implemented, unit tested |
-| Mod catalogue, downloads, installation, profiles | **not yet** (Phases 2–6) |
+| Mod browser: Akeno Catalogue, search, order, details, screenshots | implemented, unit + mock tested |
+| Compatibility labels for the installed game version | implemented, unit tested |
+| Downloads, installation, profiles | **not yet** (Phases 3–6) |
 
 Status words (`compiled`, `unit tested`, `mock tested`, `hardware tested`,
 `verified`) are defined in [docs/compatibility.md](docs/compatibility.md). They are never mixed.
@@ -148,9 +151,12 @@ backport directory. The design is in [docs/shadowmount.md](docs/shadowmount.md).
 
 ## Providers
 
-Planned, all behind one `IModProvider` interface ([docs/providers.md](docs/providers.md)):
+All behind one `IModProvider` interface ([docs/providers.md](docs/providers.md)):
 
-* **Akeno Catalogue**: a curated, PS5-focused catalogue hosted on GitHub (Phase 2).
+* **Akeno Catalogue** (implemented): a curated, PS5-focused catalogue published
+  from this repository's [`catalog/`](catalog/) directory. It is **empty until
+  mods have been tested on PS5 hardware**; the mock server serves a fictional
+  demo catalogue for development.
 * **Nexus Mods** and **mod.io**: through their official APIs only (Phase 7).
   No scraping, no bypassing download rules.
 
@@ -164,9 +170,9 @@ sudo apt install cmake ninja-build pkg-config libcurl4-openssl-dev libsqlite3-de
                  libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
 cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build
 
-# Preview the UI with fictional demo games
+# Preview the UI with fictional demo games and the demo mod catalogue
 python3 tools/mock_shadowmount.py &
-./build/src/ui/AkenoModManager --data-root /tmp/akeno
+./build/src/ui/AkenoModManager --data-root /tmp/akeno --catalogue-url http://127.0.0.1:10101/catalog/
 
 # PS5 (ps5-payload-sdk + pacbrew libraries in /opt/ps5-payload-sdk)
 cmake -S . -B build-ps5 -G Ninja -DCMAKE_TOOLCHAIN_FILE=/opt/ps5-payload-sdk/toolchain/prospero.cmake
@@ -179,7 +185,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 |---|---|---|
 | 0 | Research ([docs/research.md](docs/research.md)) | done |
 | 1 | Safe game browser | implemented (not hardware tested) |
-| 2 | Online mod browser (Akeno catalogue) | planned |
+| 2 | Online mod browser (Akeno catalogue) | implemented (not hardware tested) |
 | 3 | Download engine | planned |
 | 4 | Mod analyser, secure extraction, dry run | planned |
 | 5 | ShadowMountPlus overlay, rollback, Vanilla | planned |
@@ -194,6 +200,9 @@ cmake --build build-ps5   # -> build-ps5/dist/
 * The UI is launched through the websrv Homebrew Launcher. A native `.ffpkg`
   tile is planned but not produced yet.
 * Launching a game from Akeno is not implemented.
+* The published catalogue has no entries yet (see [catalog/README.md](catalog/README.md)).
+* Search uses the console's system keyboard (`sceImeDialog` through the SDL
+  port). Its behaviour, especially cancelling, is not hardware tested.
 * English only.
 
 ## Credits

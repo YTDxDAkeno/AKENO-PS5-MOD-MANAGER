@@ -7,13 +7,14 @@ namespace akeno::ui {
 
 namespace {
 
-enum class HomeAction { ResolveRecovery, BrowseGames, SystemCheck, ViewLog, Settings };
+enum class HomeAction { ResolveRecovery, BrowseGames, DiscoverMods, SystemCheck, ViewLog, Settings };
 
 std::vector<HomeAction> homeActions(const AppViewState& state) {
     std::vector<HomeAction> actions;
     if (state.recovery) actions.push_back(HomeAction::ResolveRecovery);
     actions.insert(actions.end(),
-                   {HomeAction::BrowseGames, HomeAction::SystemCheck, HomeAction::ViewLog, HomeAction::Settings});
+                   {HomeAction::BrowseGames, HomeAction::DiscoverMods, HomeAction::SystemCheck, HomeAction::ViewLog,
+                    HomeAction::Settings});
     return actions;
 }
 
@@ -21,6 +22,7 @@ const char* label(HomeAction action) {
     switch (action) {
         case HomeAction::ResolveRecovery: return "Resolve the interrupted operation";
         case HomeAction::BrowseGames: return "Browse installed games";
+        case HomeAction::DiscoverMods: return "Discover mods";
         case HomeAction::SystemCheck: return "Run the system check again";
         case HomeAction::ViewLog: return "View the log";
         case HomeAction::Settings: return "Settings";
@@ -67,6 +69,25 @@ std::vector<StatusLine> statusLines(const AppViewState& state) {
         games = strings::concat(library.games.size(), library.games.size() == 1 ? " game" : " games");
     }
     lines.push_back({"Installed games", games, theme::kAccent});
+
+    const auto& catalog = state.catalog;
+    std::string catalogue;
+    Color catalogueColor = theme::kAccent;
+    if (!catalog.configured) {
+        catalogue = "address not valid";
+        catalogueColor = theme::kError;
+    } else if (catalog.loaded) {
+        catalogue = strings::concat(catalog.games.size(), catalog.games.size() == 1 ? " game with mods" : " games with mods");
+    } else if (catalog.loading) {
+        catalogue = "loading...";
+    } else if (catalog.error) {
+        catalogue = "unavailable";
+        catalogueColor = theme::kWarning;
+    } else {
+        catalogue = "opens in Discover";
+        catalogueColor = theme::kNeutral;
+    }
+    lines.push_back({"Mod catalogue", catalogue, catalogueColor});
     return lines;
 }
 
@@ -85,6 +106,7 @@ NavRequest HomeScreen::handle(Action action, UiEnv& env) {
     switch (actions[static_cast<std::size_t>(actions_.focus())]) {
         case HomeAction::ResolveRecovery: return NavRequest::push(std::make_unique<RecoveryScreen>());
         case HomeAction::BrowseGames: return NavRequest::switchTab(Tab::Games);
+        case HomeAction::DiscoverMods: return NavRequest::switchTab(Tab::Discover);
         case HomeAction::SystemCheck:
             env.commands.runSystemCheck();
             return NavRequest::push(std::make_unique<SystemCheckScreen>());
@@ -104,7 +126,7 @@ void HomeScreen::render(ICanvas& canvas, UiEnv& env) {
     actions_.setCount(static_cast<int>(actions.size()));
 
     // Welcome panel and actions (left).
-    const Rect welcome{content.x, content.y, 1000, 300};
+    const Rect welcome{content.x, content.y, 1000, 260};
     draw::panel(canvas, welcome);
     canvas.drawText("Akeno PS5 Mod Manager", {welcome.x + 40, welcome.y + 30, welcome.w - 80, 64},
                     TextStyle{FontRole::Title, theme::kTextPrimary, TextAlign::Left, true});
@@ -112,18 +134,17 @@ void HomeScreen::render(ICanvas& canvas, UiEnv& env) {
                     {welcome.x + 40, welcome.y + 100, welcome.w - 80, 44},
                     TextStyle{FontRole::Body, theme::kAccent, TextAlign::Left, false});
     drawWrappedText(canvas,
-                    "Browse the games installed on this console. Downloading and installing mods arrive in "
-                    "later releases; this version never changes game data.",
-                    {welcome.x + 40, welcome.y + 160, welcome.w - 80, 120},
-                    TextStyle{FontRole::Body, theme::kTextSecondary, TextAlign::Left, false}, 44, 3);
+                    "Browse your games and the mods available for them. This version never changes game data.",
+                    {welcome.x + 40, welcome.y + 152, welcome.w - 80, 90},
+                    TextStyle{FontRole::Body, theme::kTextSecondary, TextAlign::Left, false}, 44, 2);
 
     for (int i = 0; i < static_cast<int>(actions.size()); ++i) {
-        const Rect row{content.x, welcome.bottom() + 36 + i * 88, 1000, 72};
+        const Rect row{content.x, welcome.bottom() + 30 + i * 80, 1000, 68};
         draw::button(canvas, row, label(actions[static_cast<std::size_t>(i)]), actions_.focus() == i);
     }
 
     // Status panel (right).
-    const Rect status{content.x + 1060, content.y, content.w - 1060, 640};
+    const Rect status{content.x + 1060, content.y, content.w - 1060, content.h};
     draw::panel(canvas, status);
     canvas.drawText("Status", {status.x + 36, status.y + 24, status.w - 72, 56},
                     TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});

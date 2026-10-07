@@ -18,6 +18,7 @@
 #include "akeno/logging/Logger.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
 #include "akeno/platform/Platform.hpp"
+#include "akeno/providers/AkenoCatalogProvider.hpp"
 #include "akeno/security/SafeFs.hpp"
 #include "akeno/shadowmount/ShadowMountGameProvider.hpp"
 
@@ -40,6 +41,12 @@ public:
     games::GameLibrary* library() { return library_.get(); }
     games::IGameDiscoveryProvider* gameProvider() { return gameProvider_.get(); }
     network::IHttpClient& http() { return *http_; }
+    // The Akeno Catalogue provider; null if its address is invalid (see catalogueError()).
+    // Shared so background jobs keep a provider alive while the address is being changed.
+    std::shared_ptr<providers::AkenoCatalogProvider> catalogue() const { return catalogue_; }
+    const std::optional<Error>& catalogueError() const { return catalogueError_; }
+    // True when --catalogue-url set the address for this session (the setting is then ignored).
+    bool catalogueOverridden() const { return catalogueOverride_.has_value(); }
     logging::RingBufferSink& logRing() { return *logRing_; }
     OperationJournal& journal() { return *journal_; }
     const std::optional<OperationState>& interruptedOperation() const { return interrupted_; }
@@ -50,6 +57,9 @@ public:
     Status saveSettings(const database::Settings& settings);
 
     SystemChecker makeSystemChecker();
+
+    // Creates the catalogue provider for `url` (https, or http on loopback).
+    void configureCatalogue(const std::string& url);
 
     // Writes logs/diagnostic-<timestamp>.txt: versions, settings, the last system report, the
     // interrupted operation (if any) and recent log lines. Secrets are already redacted.
@@ -76,6 +86,9 @@ private:
     std::unique_ptr<shadowmount::ShadowMountGameProvider> gameProvider_;
     std::optional<Error> gameProviderError_;
     std::unique_ptr<games::GameLibrary> library_;
+    std::shared_ptr<providers::AkenoCatalogProvider> catalogue_;
+    std::optional<Error> catalogueError_;
+    std::optional<std::string> catalogueOverride_;  // --catalogue-url for this session
 };
 
 }  // namespace akeno::app

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/ui/UiScript.hpp"
 
+#include <algorithm>
 #include <charconv>
 
 #include "akeno/core/Strings.hpp"
@@ -38,6 +39,13 @@ Result<std::vector<ScriptStep>> parseUiScript(std::string_view text) {
             step.name = std::string(token.substr(5));
             if (!security::isSafeFileComponent(step.name)) {
                 return makeError(ErrorCode::InvalidArgument, "Invalid screenshot name in UI script.", step.name);
+            }
+        } else if (strings::startsWith(token, "type:")) {
+            step.kind = ScriptStep::Kind::Type;
+            step.name = std::string(token.substr(5));
+            const bool printable = std::all_of(step.name.begin(), step.name.end(), [](char c) { return c >= 0x20 && c < 0x7F; });
+            if (!printable || step.name.size() > 128) {
+                return makeError(ErrorCode::InvalidArgument, "Invalid text in UI script.", step.name);
             }
         } else if (token == "quit") {
             step.kind = ScriptStep::Kind::Quit;
@@ -82,12 +90,16 @@ UiScriptRunner::Tick UiScriptRunner::update(double now) {
                 tick.screenshots.push_back(step.name);
                 readyAt_ = now + 0.05;
                 break;
+            case ScriptStep::Kind::Type:
+                tick.typed.push_back(step.name);
+                readyAt_ = now + 0.05;
+                break;
             case ScriptStep::Kind::Quit:
                 tick.quit = true;
                 next_ = steps_.size();
                 break;
         }
-        if (!tick.actions.empty() || !tick.screenshots.empty()) break;
+        if (!tick.actions.empty() || !tick.screenshots.empty() || !tick.typed.empty()) break;
     }
     return tick;
 }

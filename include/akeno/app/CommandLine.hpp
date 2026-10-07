@@ -14,6 +14,7 @@ struct CommandLine {
     RunMode mode = RunMode::Interactive;
     std::optional<std::filesystem::path> dataRoot;
     std::optional<int> shadowMountPort;
+    std::optional<std::string> catalogueUrl;
     int windowWidth = 1280;   // host window only; the console always renders 1920x1080
     int windowHeight = 720;
     bool fullscreen = false;

@@ -109,7 +109,13 @@ Result<mods::CatalogIndex> AkenoCatalogProvider::index(const CancellationToken* 
         if (index_ && std::chrono::steady_clock::now() - index_->fetchedAt < ttl_) return index_->value;
     }
     auto body = fetch("index.json", mods::kMaxIndexBytes, cancel);
-    if (!body) return std::move(body).error();
+    if (!body) {
+        Error error = std::move(body).error();
+        if (error.code == ErrorCode::NotFound) {
+            error.message = "There is no Akeno Catalogue at this address (index.json was not found).";
+        }
+        return error;
+    }
     auto parsed = mods::parseCatalogIndex(body.value());
     if (!parsed) return std::move(parsed).error();
     std::lock_guard<std::mutex> lock(mutex_);

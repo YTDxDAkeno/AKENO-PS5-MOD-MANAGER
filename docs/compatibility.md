@@ -22,10 +22,13 @@ upgraded without evidence.
 | ShadowMountPlus client and game discovery | ✓ host + PS5 | ✓ | ✓ (fixtures, mock server) | ✗ |
 | System check / Safe Mode | ✓ host + PS5 | ✓ | ✓ | ✗ |
 | User interface | ✓ host + PS5 | ✓ (screen logic) | ✓ (desktop, offscreen) | ✗ |
+| Akeno Catalogue provider, compatibility labels | ✓ host + PS5 | ✓ (fixtures) | ✓ (mock server, real HTTP client) | ✗ |
+| Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
+| Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | ✗ |
 
-## Mod compatibility labels (Phase 2+)
+## Mod compatibility labels
 
 | Label | Meaning | Colour |
 |---|---|---|

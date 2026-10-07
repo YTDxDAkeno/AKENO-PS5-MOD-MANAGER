@@ -140,6 +140,13 @@ if(AKENO_TARGET_PS5)
     set_target_properties(AkenoSelfCheck PROPERTIES OUTPUT_NAME "AkenoSelfCheck.elf")
 endif()
 
+# ------------------------------------------------------------------------- catalogue maintenance tool
+# Host-only: validates catalogue directories with the application's own parser.
+if(NOT AKENO_TARGET_PS5)
+    add_executable(akeno-catalog-check tools/catalog_check/main.cpp)
+    target_link_libraries(akeno-catalog-check PRIVATE akeno_core akeno_warnings)
+endif()
+
 # ------------------------------------------------------------------------- user interface
 if(AKENO_BUILD_APP)
     add_subdirectory(src/ui)
@@ -149,4 +156,12 @@ endif()
 if(AKENO_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    add_test(NAME demo_catalogue_is_consistent
+             COMMAND akeno-catalog-check "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/catalog" --allow-loopback)
+    add_test(NAME published_catalogue_is_consistent
+             COMMAND akeno-catalog-check "${CMAKE_CURRENT_SOURCE_DIR}/catalog")
+    # The demo catalogue uses http://127.0.0.1: the strict (published) rules must reject it.
+    add_test(NAME catalogue_check_rejects_plain_http
+             COMMAND akeno-catalog-check "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/catalog")
+    set_tests_properties(catalogue_check_rejects_plain_http PROPERTIES WILL_FAIL TRUE)
 endif()

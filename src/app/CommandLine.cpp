@@ -60,6 +60,10 @@ CommandLine parseCommandLine(int argc, const char* const* argv) {
                     cl.errors.push_back("--shadowmount-port must be between 1 and 65535");
                 }
             }
+        } else if (arg == "--catalogue-url") {
+            if (auto value = needValue(arg)) {
+                cl.catalogueUrl = std::string(*value);
+            }
         } else if (arg == "--ui-script") {
             if (auto value = needValue(arg)) {
                 cl.uiScript = std::string(*value);
@@ -95,6 +99,8 @@ std::string usageText() {
            "  --data-root <dir>        application data directory\n"
            "                           (console default: /data/akeno-mod-manager)\n"
            "  --shadowmount-port <n>   ShadowMountPlus API port on 127.0.0.1 (default 10101)\n"
+           "  --catalogue-url <url>    Akeno Catalogue address for this session (https,\n"
+           "                           or http://127.0.0.1 for local testing)\n"
            "  --window <WxH>           window size for desktop builds\n"
            "  --fullscreen             full-screen window for desktop builds\n"
            "  --verbose                include debug messages in the log\n"

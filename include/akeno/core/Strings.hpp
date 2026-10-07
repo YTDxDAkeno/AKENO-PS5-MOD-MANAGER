@@ -19,6 +19,9 @@ std::vector<std::string> split(std::string_view text, char separator);
 // Truncates to at most `maxBytes` without splitting a UTF-8 sequence.
 std::string truncateUtf8(std::string_view text, std::size_t maxBytes);
 
+// Removes the last UTF-8 character (all of its bytes). No effect on an empty string.
+void popBackUtf8(std::string& text);
+
 // Replaces control characters and invalid UTF-8 so a string is safe to render and log.
 std::string sanitizeForDisplay(std::string_view text, std::size_t maxBytes);
 

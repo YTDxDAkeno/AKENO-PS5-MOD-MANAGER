@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace akeno::ui {
 
@@ -64,6 +65,10 @@ public:
     // ready, so the caller can draw a placeholder.
     virtual bool drawImage(const std::string& key, const Rect& rect) = 0;
 };
+
+// Breaks text into lines no wider than `width` (at spaces; '\n' starts a new line). A single
+// word wider than the line is kept whole and shortened when drawn.
+std::vector<std::string> wrapText(ICanvas& canvas, std::string_view text, int width, FontRole role, bool bold);
 
 // Lays out text that may need several lines; returns the number of lines drawn.
 int drawWrappedText(ICanvas& canvas, std::string_view text, const Rect& box, const TextStyle& style, int lineHeight,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/ui/AppController.hpp"
 
+#include <algorithm>
 #include <system_error>
 
 #include "akeno/core/BuildInfo.hpp"
@@ -8,12 +9,28 @@
 #include "akeno/core/Strings.hpp"
 #include "akeno/database/Database.hpp"
 #include "akeno/games/GameLibrary.hpp"
+#include "akeno/mods/Catalog.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
+#include "akeno/security/ImageProbe.hpp"
 #include "akeno/security/SafeName.hpp"
+#include "akeno/security/Sha256.hpp"
 
 namespace akeno::ui {
 
 using logging::logger;
+
+namespace {
+
+// Remote image cache bounds (cache/images). The oldest files are removed at startup.
+constexpr std::size_t kMaxCachedImages = 600;
+constexpr std::uint64_t kMaxImageCacheBytes = 160ull * 1024 * 1024;
+
+bool sameGame(const std::optional<providers::GameContext>& a, const std::optional<providers::GameContext>& b) {
+    if (a.has_value() != b.has_value()) return false;
+    return !a || (a->titleId == b->titleId && a->version == b->version);
+}
+
+}  // namespace
 
 AppController::AppController(app::AppContext& context, TaskRunner& tasks, MainThreadQueue& mainQueue,
                              IImageLoader* images)
@@ -37,9 +54,13 @@ AppController::AppController(app::AppContext& context, TaskRunner& tasks, MainTh
     if (context_.databaseError()) {
         about.databaseEngine += " - unavailable: " + context_.databaseError()->message;
     }
+    resetCatalogView();
 }
 
-void AppController::start() { runSystemCheck(); }
+void AppController::start() {
+    runSystemCheck();
+    tasks_.submit([this] { pruneImageCache(); });
+}
 
 void AppController::runSystemCheck() {
     if (state_.systemCheck.running) {
@@ -106,9 +127,13 @@ void AppController::applyFilter() {
 }
 
 Status AppController::saveSettings(const database::Settings& settings) {
+    const bool catalogueChanged = settings.catalogueUrl != state_.settings.catalogueUrl;
     AKENO_TRY(context_.saveSettings(settings));
     state_.settings = settings;
     applyFilter();
+    if (catalogueChanged) {
+        resetCatalogView();
+    }
     return {};
 }
 
@@ -173,9 +198,272 @@ std::string AppController::gameIconKey(const games::GameInfo& game, int size) {
     }
     std::string key = strings::concat("icon:", game.titleId, ":", game.version, ":", size);
     if (images_ != nullptr) {
-        images_->ensure(key, size, [this, game] { return fetchIcon(game); });
+        images_->ensure(key, size, size, [this, game] { return fetchIcon(game); });
     }
     return key;
+}
+
+// ---------------------------------------------------------------- remote images
+
+std::string AppController::remoteImageKey(const std::string& url, int width, int height) {
+    if (width <= 0 || height <= 0 || width > 1920 || height > 1080) {
+        return {};
+    }
+    auto known = urlKeys_.find(url);
+    if (known == urlKeys_.end()) {
+        // Only https (or http on this console for local testing) is ever requested.
+        if (url.empty() || url.size() > 2048 || !mods::isAllowedRemoteUrl(url)) {
+            return {};
+        }
+        if (urlKeys_.size() > 2000) urlKeys_.clear();
+        known = urlKeys_.emplace(url, security::sha256Hex(url)).first;
+    }
+    std::string key = strings::concat("remote:", known->second.substr(0, 32), ":", width, "x", height);
+    if (images_ != nullptr) {
+        images_->ensure(key, width, height, [this, url] { return fetchRemoteImage(url); });
+    }
+    return key;
+}
+
+Result<std::string> AppController::fetchRemoteImage(const std::string& url) {
+    // Runs on a worker. Images are validated before they are cached or decoded; the cache file
+    // name is derived from the URL hash, never from anything the server sends.
+    const auto cacheFile = context_.paths().imageCache() / (security::sha256Hex(url) + ".img");
+    std::error_code ec;
+    if (std::filesystem::exists(cacheFile, ec)) {
+        auto cached = security::readFileBounded(cacheFile, limits::kMaxImageBytes);
+        if (cached && security::validateImage(cached.value())) {
+            return cached;
+        }
+        logger().debug("images", "ignoring an invalid cached image");
+    }
+    network::HttpRequest request;
+    request.url = url;
+    request.maxResponseBytes = limits::kMaxImageBytes;
+    request.totalTimeoutMs = 30000;
+    request.headers = {{"Accept", "image/png, image/jpeg"}};
+    auto response = context_.http().send(request);
+    if (!response) {
+        return std::move(response).error();
+    }
+    if (!response->isSuccess()) {
+        return makeError(ErrorCode::HttpStatus, "The image could not be downloaded.",
+                         strings::concat("HTTP ", response->status));
+    }
+    auto info = security::validateImage(response->body);
+    if (!info) {
+        return std::move(info).error();
+    }
+    auto stored = context_.fs().writeFileAtomic(cacheFile, response->body);
+    if (!stored) {
+        logger().warn("images", "could not cache image: " + stored.error().describe());
+    }
+    return std::move(response->body);
+}
+
+void AppController::pruneImageCache() {
+    // Runs on a worker at startup. Keeps the cache within its file and size limits by removing
+    // the files that were downloaded first.
+    struct Entry {
+        std::filesystem::path path;
+        std::filesystem::file_time_type time;
+        std::uint64_t size;
+    };
+    std::vector<Entry> entries;
+    std::uint64_t total = 0;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(context_.paths().imageCache(), ec), end; !ec && it != end;
+         it.increment(ec)) {
+        std::error_code entryEc;
+        if (!it->is_regular_file(entryEc) || it->is_symlink(entryEc)) continue;
+        Entry entry{it->path(), it->last_write_time(entryEc), it->file_size(entryEc)};
+        if (entryEc) continue;
+        total += entry.size;
+        entries.push_back(std::move(entry));
+        if (entries.size() > 100000) break;
+    }
+    if (entries.size() <= kMaxCachedImages && total <= kMaxImageCacheBytes) {
+        return;
+    }
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.time < b.time; });
+    std::size_t count = entries.size();
+    std::size_t removed = 0;
+    for (const auto& entry : entries) {
+        if (count <= kMaxCachedImages && total <= kMaxImageCacheBytes) break;
+        if (context_.fs().removeFile(entry.path)) {
+            ++removed;
+        }
+        --count;
+        total -= entry.size;
+    }
+    logger().info("images", strings::concat("image cache pruned: ", removed, " files removed"));
+}
+
+// ---------------------------------------------------------------- catalogue
+
+void AppController::resetCatalogView() {
+    // Results of requests made for the previous address are dropped.
+    ++catalogGeneration_;
+    listCancel_.cancel();
+    detailCancel_.cancel();
+    auto provider = context_.catalogue();
+    CatalogView view;
+    view.configured = provider != nullptr;
+    view.source = provider ? provider->baseUrl() : state_.settings.catalogueUrl;
+    view.overridden = context_.catalogueOverridden();
+    view.configurationError = context_.catalogueError();
+    state_.catalog = std::move(view);
+
+    const std::uint64_t listRequest = state_.modList.request + 1;
+    state_.modList = ModListView{};
+    state_.modList.request = listRequest;
+    const std::uint64_t detailRequest = state_.modDetail.request + 1;
+    state_.modDetail = ModDetailView{};
+    state_.modDetail.request = detailRequest;
+}
+
+void AppController::loadCatalogGames(bool forceRefresh) {
+    CatalogView& view = state_.catalog;
+    auto provider = context_.catalogue();
+    if (!provider) {
+        view.error = context_.catalogueError().value_or(
+            makeError(ErrorCode::Unavailable, "The mod catalogue address is not valid."));
+        return;
+    }
+    if (view.loading || (view.loaded && !forceRefresh)) {
+        return;
+    }
+    view.loading = true;
+    const std::uint64_t generation = catalogGeneration_;
+    tasks_.submit([this, provider, forceRefresh, generation] {
+        if (forceRefresh) provider->clearCache();
+        auto games = provider->listGames(nullptr);
+        mainQueue_.post([this, generation, games = std::move(games)]() mutable {
+            if (generation != catalogGeneration_) return;
+            CatalogView& current = state_.catalog;
+            current.loading = false;
+            if (!games) {
+                current.error = games.error();
+                logger().warn("catalogue", "could not load the catalogue: " + games.error().describe());
+                return;
+            }
+            current.error.reset();
+            current.loaded = true;
+            current.games = std::move(games).value();
+            logger().info("catalogue", strings::concat("catalogue loaded: ", current.games.size(), " games"));
+        });
+    });
+}
+
+void AppController::loadModList(const providers::SearchQuery& query) {
+    ModListView& view = state_.modList;
+    const bool sameList = view.page && view.query.providerGameId == query.providerGameId && sameGame(view.query.game, query.game);
+    ++view.request;
+    view.query = query;
+    view.error.reset();
+    if (!sameList) view.page.reset();
+    auto provider = context_.catalogue();
+    if (!provider) {
+        view.loading = false;
+        view.error = context_.catalogueError().value_or(
+            makeError(ErrorCode::Unavailable, "The mod catalogue address is not valid."));
+        return;
+    }
+    view.loading = true;
+    listCancel_.cancel();
+    listCancel_ = CancellationToken{};
+    const CancellationToken cancel = listCancel_;
+    const std::uint64_t request = view.request;
+    const std::uint64_t generation = catalogGeneration_;
+    tasks_.submit([this, provider, query, cancel, request, generation] {
+        auto page = query.text.empty() ? provider->browseMods(query, &cancel) : provider->searchMods(query, &cancel);
+        mainQueue_.post([this, request, generation, page = std::move(page)]() mutable {
+            if (generation != catalogGeneration_ || request != state_.modList.request) return;
+            ModListView& current = state_.modList;
+            current.loading = false;
+            if (!page) {
+                current.error = page.error();
+                current.page.reset();
+                logger().warn("catalogue", "could not list mods: " + page.error().describe());
+                return;
+            }
+            current.page = std::move(page).value();
+        });
+    });
+}
+
+void AppController::loadModDetails(const providers::ModRef& ref, const std::optional<providers::GameContext>& game) {
+    ModDetailView& view = state_.modDetail;
+    if (!(view.ref == ref)) view.details.reset();
+    ++view.request;
+    view.ref = ref;
+    view.error.reset();
+    auto provider = context_.catalogue();
+    if (!provider) {
+        view.loading = false;
+        view.error = context_.catalogueError().value_or(
+            makeError(ErrorCode::Unavailable, "The mod catalogue address is not valid."));
+        return;
+    }
+    view.loading = true;
+    detailCancel_.cancel();
+    detailCancel_ = CancellationToken{};
+    const CancellationToken cancel = detailCancel_;
+    const std::uint64_t request = view.request;
+    const std::uint64_t generation = catalogGeneration_;
+    tasks_.submit([this, provider, ref, game, cancel, request, generation] {
+        auto details = provider->getModDetails(ref, game, &cancel);
+        mainQueue_.post([this, request, generation, details = std::move(details)]() mutable {
+            if (generation != catalogGeneration_ || request != state_.modDetail.request) return;
+            ModDetailView& current = state_.modDetail;
+            current.loading = false;
+            if (!details) {
+                current.error = details.error();
+                current.details.reset();
+                logger().warn("catalogue", "could not load mod details: " + details.error().describe());
+                return;
+            }
+            current.details = std::move(details).value();
+        });
+    });
+}
+
+// ---------------------------------------------------------------- text entry
+
+void AppController::requestTextInput(const std::string& prompt, const std::string& initial,
+                                     std::function<void(std::optional<std::string>)> done) {
+    if (state_.textEntry.active) {
+        finishTextInput(false);
+    }
+    state_.textEntry.active = true;
+    state_.textEntry.systemKeyboard = context_.platform().isConsole();
+    state_.textEntry.prompt = prompt;
+    state_.textEntry.text = strings::sanitizeForDisplay(initial, kMaxTextInputBytes);
+    textInputDone_ = std::move(done);
+}
+
+void AppController::appendTextInput(std::string_view utf8) {
+    if (!state_.textEntry.active) return;
+    state_.textEntry.text =
+        strings::sanitizeForDisplay(state_.textEntry.text + std::string(utf8), kMaxTextInputBytes);
+}
+
+void AppController::eraseTextInput() {
+    if (state_.textEntry.active) strings::popBackUtf8(state_.textEntry.text);
+}
+
+void AppController::setTextInput(std::string text) {
+    if (state_.textEntry.active) state_.textEntry.text = strings::sanitizeForDisplay(text, kMaxTextInputBytes);
+}
+
+void AppController::finishTextInput(bool accepted) {
+    if (!state_.textEntry.active) return;
+    auto done = std::move(textInputDone_);
+    textInputDone_ = nullptr;
+    std::optional<std::string> result;
+    if (accepted) result = std::string(strings::trim(state_.textEntry.text));
+    state_.textEntry = TextEntryView{};
+    if (done) done(std::move(result));
 }
 
 }  // namespace akeno::ui

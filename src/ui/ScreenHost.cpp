@@ -26,6 +26,26 @@ std::vector<ButtonHint> Screen::hints(const UiEnv& /*env*/) const {
             {ButtonHint::Button::Cross, "Select"}};
 }
 
+std::function<void(std::optional<std::string>)> TextRequest::callback() {
+    slot_->pending = true;
+    slot_->ready = false;
+    slot_->text.reset();
+    auto slot = slot_;
+    return [slot](std::optional<std::string> text) {
+        slot->pending = false;
+        slot->ready = true;
+        slot->text = std::move(text);
+    };
+}
+
+bool TextRequest::take(std::optional<std::string>& text) {
+    if (!slot_->ready) return false;
+    slot_->ready = false;
+    text = std::move(slot_->text);
+    slot_->text.reset();
+    return true;
+}
+
 ScreenHost::ScreenHost() = default;
 
 void ScreenHost::setTabRoot(Tab tab, std::unique_ptr<Screen> screen) {
@@ -69,6 +89,9 @@ void ScreenHost::apply(NavRequest request, std::vector<std::unique_ptr<Screen>>&
 }
 
 void ScreenHost::handle(Action action, UiEnv& env) {
+    if (env.state.textEntry.active) {
+        return;  // the text entry owns the input until it is finished
+    }
     if (!flows_.empty()) {
         Screen* screen = flows_.back().get();
         apply(screen->handle(action, env), flows_, true);
@@ -90,6 +113,7 @@ void ScreenHost::handle(Action action, UiEnv& env) {
 
 bool ScreenHost::animating(const UiEnv& env) const {
     if (!toasts_.empty()) return true;
+    if (env.state.textEntry.active && !env.state.textEntry.systemKeyboard) return true;  // caret
     if (!flows_.empty()) return flows_.back()->animating(env);
     const auto& stack = tabs_[static_cast<std::size_t>(current_)];
     return !stack.empty() && stack.back()->animating(env);
@@ -155,23 +179,75 @@ void ScreenHost::renderToasts(ICanvas& canvas, double now) {
         toasts_.pop_front();
     }
     int y = theme::kFooter.y - 30;
+    constexpr int kMaxTextWidth = 1300;
     for (auto it = toasts_.rbegin(); it != toasts_.rend(); ++it) {
         Color accent = theme::kAccent;
         if (it->kind == ToastKind::Success) accent = theme::kOk;
         if (it->kind == ToastKind::Warning) accent = theme::kWarning;
         if (it->kind == ToastKind::Error) accent = theme::kError;
-        const int width = std::min(1100, canvas.measureText(it->text, FontRole::Body, false).w + 80);
-        const Rect box{theme::kScreenWidth - theme::kMargin - width, y - 76, width, 76};
+        // Up to two lines; anything longer is shortened at the end of the second line.
+        auto lines = wrapText(canvas, it->text, kMaxTextWidth, FontRole::Body, false);
+        if (lines.size() > 2) {
+            for (std::size_t i = 2; i < lines.size(); ++i) lines[1] += " " + lines[i];
+            lines.resize(2);
+        }
+        int textWidth = 0;
+        for (const auto& line : lines) {
+            textWidth = std::max(textWidth, canvas.measureText(line, FontRole::Body, false).w);
+        }
+        const int width = std::min(kMaxTextWidth, textWidth) + 80;
+        const int height = lines.size() > 1 ? 120 : 76;
+        const Rect box{theme::kScreenWidth - theme::kMargin - width, y - height, width, height};
         canvas.fillRoundedRect(box, 14, theme::kPanelRaised);
         canvas.fillRoundedRect({box.x, box.y, 10, box.h}, 5, accent);
-        canvas.drawText(it->text, {box.x + 36, box.y, box.w - 56, box.h},
-                        TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, false});
-        y -= 92;
+        const int lineHeight = 44;
+        int lineY = box.y + (box.h - lineHeight * static_cast<int>(lines.size())) / 2;
+        for (const auto& line : lines) {
+            canvas.drawText(line, {box.x + 36, lineY, box.w - 56, lineHeight},
+                            TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, false});
+            lineY += lineHeight;
+        }
+        y -= height + 16;
     }
+}
+
+void ScreenHost::renderTextEntry(ICanvas& canvas, const UiEnv& env) {
+    const TextEntryView& entry = env.state.textEntry;
+    canvas.fillRect({0, 0, theme::kScreenWidth, theme::kScreenHeight}, Color{0, 0, 0, 170});
+    const Rect box{(theme::kScreenWidth - 1300) / 2, 300, 1300, 380};
+    draw::panel(canvas, box, true);
+    canvas.fillRoundedRect({box.x, box.y, box.w, 10}, 5, theme::kAccent);
+    canvas.drawText(entry.prompt, {box.x + 60, box.y + 40, box.w - 120, 60},
+                    TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+    const Rect field{box.x + 60, box.y + 130, box.w - 120, 90};
+    canvas.fillRoundedRect(field, 12, theme::kBackground);
+    canvas.strokeRoundedRect(field, 12, 3, theme::kAccent);
+    std::string shown = entry.text;
+    const bool caretOn = !entry.systemKeyboard && static_cast<long long>(env.time * 2.0) % 2 == 0;
+    if (caretOn) shown += "|";
+    if (shown.empty() && entry.systemKeyboard) shown = " ";
+    // Keep the end of long text visible: drop characters from the front until it fits.
+    std::string_view visible = shown;
+    while (visible.size() > 1 && canvas.measureText(visible, FontRole::Body, false).w > field.w - 60) {
+        std::size_t cut = 1;
+        while (cut < visible.size() && (static_cast<unsigned char>(visible[cut]) & 0xC0) == 0x80) ++cut;
+        visible.remove_prefix(cut);
+    }
+    canvas.drawText(visible, {field.x + 30, field.y, field.w - 60, field.h},
+                    TextStyle{FontRole::Body, theme::kTextPrimary, TextAlign::Left, false});
+    const std::string_view help = entry.systemKeyboard
+                                      ? "Type with the console keyboard and choose OK. Cancel returns without changes."
+                                      : "Type, then press ENTER. ESC cancels.";
+    drawWrappedText(canvas, help, {box.x + 60, field.bottom() + 30, box.w - 120, 100},
+                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 40, 2);
 }
 
 void ScreenHost::render(ICanvas& canvas, UiEnv& env) {
     Screen* screen = top();
+    if (screen != nullptr) {
+        screen->update(env);
+        screen = top();
+    }
     const bool full = screen != nullptr && screen->fullScreen();
     if (full) {
         canvas.fillRect({0, 0, theme::kScreenWidth, theme::kScreenHeight}, theme::kBackground);
@@ -181,6 +257,9 @@ void ScreenHost::render(ICanvas& canvas, UiEnv& env) {
     if (screen != nullptr) {
         screen->render(canvas, env);
         draw::footerHints(canvas, screen->hints(env));
+    }
+    if (env.state.textEntry.active) {
+        renderTextEntry(canvas, env);
     }
     renderToasts(canvas, env.time);
 }

@@ -31,6 +31,8 @@ if(TARGET akeno_ui)
         ui/test_input.cpp
         ui/test_widgets.cpp
         ui/test_screens.cpp
+        ui/test_mod_screens.cpp
+        ui/test_app_controller.cpp
     )
     target_link_libraries(akeno_tests PRIVATE akeno_ui)
 endif()
