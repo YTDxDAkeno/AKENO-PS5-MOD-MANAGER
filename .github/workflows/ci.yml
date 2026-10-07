@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Prebuilt ps5-payload-sdk + pacbrew libraries (ps5-payload-dev/pacbrew-repo release).
+  PACBREW_VERSION: v0.40.2
+  PACBREW_SHA256: a85f65de418a8e6a898c6c3e3c870d50fff7618a200e4dd59ea9692af6ecec4d
+
+jobs:
+  host:
+    name: Host build and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build pkg-config \
+            libcurl4-openssl-dev libsqlite3-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAKENO_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Headless system check against the mock ShadowMountPlus API
+        run: |
+          python3 tools/mock_shadowmount.py --port 10111 &
+          sleep 1
+          ./build/src/ui/AkenoModManager --self-check --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
+          ./build/AkenoSelfCheck --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
+          ./build/src/ui/AkenoModManager --list-games --data-root "$RUNNER_TEMP/akeno" --shadowmount-port 10111
+
+      - name: User interface smoke test (offscreen)
+        env:
+          SDL_VIDEODRIVER: offscreen
+        run: |
+          ./build/src/ui/AkenoModManager --data-root "$RUNNER_TEMP/akeno-ui" --shadowmount-port 10111 \
+            --window 1920x1080 --ui-script \
+            "wait:3,shot:01-first-run,confirm,wait:3,confirm,wait:1,confirm,wait:2,confirm,confirm,confirm,confirm,wait:2,shot:02-home,next-tab,wait:2,shot:03-games,confirm,wait:1,shot:04-details,back,prev-tab,prev-tab,shot:05-settings,quit"
+          ls "$RUNNER_TEMP/akeno-ui/logs"
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-ui-screenshots
+          path: ${{ runner.temp }}/akeno-ui/logs/*.png
+          if-no-files-found: error
+
+  sanitizers:
+    name: Tests with AddressSanitizer and UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build pkg-config \
+            libcurl4-openssl-dev libsqlite3-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAKENO_BUILD_APP=OFF -DAKENO_SANITIZE=ON
+      - name: Build
+        run: cmake --build build
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+  ps5:
+    name: PS5 build (ps5-payload-sdk)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18 cmake ninja-build pkg-config
+
+      - name: Download the PS5 SDK and libraries
+        run: |
+          curl -fsSL -o ps5-payload-dev.tar.gz \
+            "https://github.com/ps5-payload-dev/pacbrew-repo/releases/download/${PACBREW_VERSION}/ps5-payload-dev.tar.gz"
+          echo "${PACBREW_SHA256}  ps5-payload-dev.tar.gz" | sha256sum -c -
+          sudo tar -xzf ps5-payload-dev.tar.gz -C /
+          rm ps5-payload-dev.tar.gz
+
+      - name: Configure
+        env:
+          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+        run: |
+          cmake -S . -B build-ps5 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=/opt/ps5-payload-sdk/toolchain/prospero.cmake
+
+      - name: Build
+        env:
+          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+        run: cmake --build build-ps5
+
+      - name: Verify artifacts
+        run: |
+          file build-ps5/dist/AkenoModManager.elf build-ps5/dist/AkenoSelfCheck.elf
+          cd build-ps5/dist && sha256sum -c SHA256SUMS
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AkenoModManager-ps5-${{ github.sha }}
+          path: |
+            build-ps5/dist/AkenoModManager.elf
+            build-ps5/dist/AkenoSelfCheck.elf
+            build-ps5/dist/AkenoModManager-homebrew.zip
+            build-ps5/dist/SHA256SUMS
+          if-no-files-found: error

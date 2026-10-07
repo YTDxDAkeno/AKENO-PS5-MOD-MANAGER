@@ -44,14 +44,16 @@ if(AKENO_TARGET_PS5)
         COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/assets/homebrew/homebrew.js" "${hb}/homebrew.js"
         COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/assets/icon0.png" "${hb}/sce_sys/icon0.png"
         COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:AkenoModManager>" "${dist}/AkenoModManager.elf"
+        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:AkenoSelfCheck>" "${dist}/AkenoSelfCheck.elf"
         # Debug information only; symbol tables stay for the payload loaders.
         COMMAND "${CMAKE_STRIP}" --strip-debug "${hb}/eboot.elf"
         COMMAND "${CMAKE_STRIP}" --strip-debug "${dist}/AkenoModManager.elf"
+        COMMAND "${CMAKE_STRIP}" --strip-debug "${dist}/AkenoSelfCheck.elf"
         COMMAND "${CMAKE_COMMAND}" -E chdir "${dist}"
                 "${CMAKE_COMMAND}" -E tar cf "AkenoModManager-homebrew.zip" --format=zip AkenoModManager
-        COMMAND "${CMAKE_COMMAND}" -DDIRECTORY=${dist} -DFILES=AkenoModManager.elf,AkenoModManager-homebrew.zip
+        COMMAND "${CMAKE_COMMAND}" -DDIRECTORY=${dist} -DFILES=AkenoModManager.elf,AkenoSelfCheck.elf,AkenoModManager-homebrew.zip
                 -P "${CMAKE_SOURCE_DIR}/cmake/Checksums.cmake"
-        DEPENDS AkenoModManager
+        DEPENDS AkenoModManager AkenoSelfCheck
         COMMENT "Packaging dist/AkenoModManager.elf, dist/AkenoModManager-homebrew.zip and dist/SHA256SUMS"
         VERBATIM)
 endif()

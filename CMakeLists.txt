@@ -127,6 +127,14 @@ if(AKENO_SANITIZE AND NOT AKENO_TARGET_PS5)
     target_link_options(akeno_core PUBLIC -fsanitize=address,undefined)
 endif()
 
+# ------------------------------------------------------------------------- headless self-check payload
+# Minimal ELF without SDL for the first hardware test; works with loaders that cannot pass arguments.
+add_executable(AkenoSelfCheck src/app/selfcheck_main.cpp)
+target_link_libraries(AkenoSelfCheck PRIVATE akeno_core akeno_warnings)
+if(AKENO_TARGET_PS5)
+    set_target_properties(AkenoSelfCheck PROPERTIES OUTPUT_NAME "AkenoSelfCheck.elf")
+endif()
+
 # ------------------------------------------------------------------------- user interface
 if(AKENO_BUILD_APP)
     add_subdirectory(src/ui)
