@@ -37,6 +37,9 @@ tested on a Linux host; **not hardware tested yet.**
   requires) downloaded. Always EXPERIMENTAL. Nexus files have no published
   checksum: the size is checked and the SHA-256 recorded. See
   `docs/nexus-mods.md`. Tested with recorded answers only.
+- After a console crash with two Reloaded-II mods: mods made for PC loaders
+  (Reloaded-II, Fluffy Mod Manager) are PC ONLY, and PC-source mods (Nexus,
+  GameBanana) may only add files, never replace the game's own.
 - GameBanana provider (free, no account): opt-in setting, because installed
   game names are sent to gamebanana.com to find them; mods listed, searched and
   downloaded for free; always EXPERIMENTAL; no published checksum, so the size

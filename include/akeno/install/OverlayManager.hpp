@@ -89,6 +89,10 @@ struct InstallRequest {
     std::string targetPrefix;
     providers::CompatibilityStatus catalogueStatus = providers::CompatibilityStatus::Unknown;
     bool catalogueInstallable = false;
+    // A PC mod (Nexus, GameBanana): it may only add files, never replace the game's own, and
+    // only where the game's folder can be checked.
+    bool pcSource = false;
+    std::string gameFolder;  // the game's files (folder games); empty when they cannot be read
 };
 
 // The title whose overlay is changed. `mounted` and `installedPkg` come from ShadowMountPlus.

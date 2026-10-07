@@ -370,6 +370,30 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
         return fail(makeError(ErrorCode::SafetyViolation, "This mod cannot be installed: " + why));
     }
 
+    if (request.pcSource) {
+        // Replacing a game file with its PC version crashed a PS5 (2026-10-07): PC mods may only add.
+        if (request.gameFolder.empty()) {
+            return fail(makeError(ErrorCode::Unsupported,
+                                  "This is a PC mod, and Akeno cannot see this game's files to make sure it replaces "
+                                  "none of them, so it is not installed."));
+        }
+        std::size_t replaced = 0;
+        std::string example;
+        for (const auto& file : analysis.files) {
+            if (file.installPath.empty()) continue;
+            if (existsNoFollow(fs::path(request.gameFolder) / file.installPath)) {
+                if (replaced++ == 0) example = file.installPath;
+            }
+        }
+        if (replaced > 0) {
+            return fail(makeError(ErrorCode::SafetyViolation,
+                                  strings::concat("This PC mod would replace ", replaced,
+                                                  " of the game's own files with PC versions, which can crash the "
+                                                  "game or the console. Akeno does not install it."),
+                                  example));
+        }
+    }
+
     InstalledMod mod;
     mod.downloadId = request.downloadId;
     mod.mod = request.mod;

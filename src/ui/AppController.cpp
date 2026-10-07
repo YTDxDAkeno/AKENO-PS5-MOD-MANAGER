@@ -852,6 +852,9 @@ void AppController::installChecked(const std::string& id) {
     request.targetPrefix = download.targetPrefix;
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
+    request.pcSource = download.mod.providerId == providers::kNexusProviderId ||
+                       download.mod.providerId == providers::kGameBananaProviderId;
+    if (!game->installedPkg && game->sourceType == games::SourceType::Folder) request.gameFolder = game->installPath;
     const install::TitleTarget target{game->titleId, game->mounted, game->installedPkg, game->installPath};
     const bool interrupted = context_.interruptedOperation().has_value();
 

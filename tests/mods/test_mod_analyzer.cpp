@@ -191,3 +191,12 @@ TEST_CASE("the plan uses copies when hard links do not work") {
     auto unknown = planInstall(analysis, paths, "PPSA90001", "0123456789abcdef");
     CHECK(unknown.overlayExtraBytes == 3000);
 }
+
+TEST_CASE("mods made for PC mod loaders are PC ONLY") {
+    auto reloaded = analyzeMod(input({file("Playable/ModConfig.json", "{"), file("Playable/data/char.mvgl")}));
+    CHECK(reloaded.status == CompatibilityStatus::PcOnly);
+    CHECK_FALSE(reloaded.installable);
+    CHECK(hasFinding(reloaded, FindingLevel::Blocker, "Reloaded-II"));
+    auto fluffy = analyzeMod(input({file("natives/STM/x.tex"), file("modinfo.ini", "name=")}));
+    CHECK(hasFinding(fluffy, FindingLevel::Blocker, "Fluffy Mod Manager"));
+}

@@ -164,3 +164,19 @@ Result:
 * Not covered: step 11 (a real mod in a real game; needs a catalogue entry), whether
   ShadowMountPlus loads an Akeno overlay into a running game.
 Logs: akeno.log, system-check, games, download-test, diagnostic (not published)
+
+### 2026-10-07 - repository owner - Akeno 0.2.0-alpha (31fb0f0f0672), real mods (ladder step 11)
+Console: PS5, firmware 12.20, ShadowMountPlus 1.7beta4
+Result:
+* GameBanana downloads, checks and installs worked for two games. Nexus: browsing worked;
+  the download was refused (no Premium), as designed.
+* A homebrew DOOM port: three PC mods installed; the game started but showed no change (the
+  port does not read those files).
+* Digimon Story Time Stranger: two GameBanana mods (514 files, 282 MB) installed; **starting the
+  game crashed the whole console.** Both were Reloaded-II mods (`ModConfig.json`) for the PC
+  loader "dsts-loader": almost all files went into a new `dsts-loader/` folder, none replaced
+  a game file, and the game cannot use them without that loader. Cause of the crash not
+  established (the overlay itself, SMP's handling of it, or something unrelated).
+* Fixed afterwards: mods made for PC loaders (Reloaded-II `ModConfig.json`, Fluffy Mod
+  Manager `modinfo.ini`) are PC ONLY; PC-source mods (Nexus, GameBanana) may only add files,
+  never replace the game's own, and only for folder games whose files Akeno can check.

@@ -208,3 +208,29 @@ TEST_CASE("a damaged state file is refused, not guessed at") {
     CHECK_FALSE(loadTitleState(env, "PPSA90001").ok());
     CHECK_FALSE(loadTitleState(env, "../etc").ok());
 }
+
+TEST_CASE("a PC mod may add files but never replace the game's own") {
+    Fixture f;
+    auto env = f.env();
+    const fs::path game = f.dir.path() / "data" / "homebrew" / "Some Game";
+    fs::create_directories(game / "data");
+    test::writeText(game / "data" / "chara.bin", "original");
+
+    auto replacing = f.request("aaaa1111", {{"data/chara.bin", "pc version", AE_IFREG, "", ""},
+                                            {"data/new.bin", "new", AE_IFREG, "", ""}});
+    replacing.pcSource = true;
+    replacing.gameFolder = game.string();
+    auto refused = storeMod(replacing, env);
+    REQUIRE_FALSE(refused.ok());
+    CHECK(refused.error().message.find("replace 1 of the game's own files") != std::string::npos);
+    CHECK(f.stagingEntries() == 0);
+
+    auto adding = f.request("bbbb2222", {{"data/new.bin", "new", AE_IFREG, "", ""}});
+    adding.pcSource = true;
+    adding.gameFolder = game.string();
+    CHECK(storeMod(adding, env).ok());
+
+    auto unknownFolder = f.request("cccc3333", {{"data/other.bin", "x", AE_IFREG, "", ""}});
+    unknownFolder.pcSource = true;
+    CHECK_FALSE(storeMod(unknownFolder, env).ok());
+}

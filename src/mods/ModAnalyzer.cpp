@@ -130,6 +130,7 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
     std::size_t caseCollisions = 0;
     std::string caseExample;
     bool ue4ss = false;
+    std::string loader;  // a PC mod loader the files are made for
     bool fakelib = false;
     bool sceSys = false;
     bool tooLong = false;
@@ -148,6 +149,12 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
 
         const std::string lowerPath = strings::toLowerAscii(file.path);
         if (lowerPath.find("ue4ss") != std::string::npos) ue4ss = true;
+        // Reloaded-II (ModConfig.json) and Fluffy Mod Manager (modinfo.ini) mods are read and
+        // rebuilt by a PC loader at run time; copied into the game as they are, they replace
+        // files with PC data (seen crashing a PS5 on 2026-10-07).
+        const std::string base = lowerPath.substr(lowerPath.rfind('/') == std::string::npos ? 0 : lowerPath.rfind('/') + 1);
+        if (base == "modconfig.json") loader = "Reloaded-II";
+        if (base == "modinfo.ini" && loader.empty()) loader = "Fluffy Mod Manager";
         const std::string ext = lowerExtension(file.path);
         if (ext == "pak" || ext == "utoc" || ext == "ucas") ++paks;
         if (ext == "assets" || ext == "bundle" || ext == "resource") ++unityFiles;
@@ -192,6 +199,12 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
                   : strings::concat("Contains Windows programs or libraries (", count(FileKind::WindowsCode),
                                     " files). This is a PC mod."),
             ue4ss ? std::string() : example(FileKind::WindowsCode));
+    }
+    if (!loader.empty()) {
+        worsen(CompatibilityStatus::PcOnly);
+        add(FindingLevel::Blocker,
+            "Made for " + loader + ", a PC mod loader that rebuilds the files when the game starts. Copied "
+            "into the game unchanged, they replace game data with PC data. This is a PC mod.");
     }
     if (fakelib) {
         worsen(CompatibilityStatus::Incompatible);
