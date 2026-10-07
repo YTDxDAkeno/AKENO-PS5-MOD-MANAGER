@@ -1,0 +1,1 @@
+{"status": 0, "debug": true, "quiet_mode": false, "update_emulators": true, "auto_update_ampr": false, "auto_remove_missing_games": false, "auto_remove_missing_delay_seconds": 300, "allow_lan_access": false, "api_bind_address": "127.0.0.1", "fan_target_temperature": 0, "scan_paths": ["/mnt/usb0/games", "relative/not/allowed", "/data/homebrew"]}

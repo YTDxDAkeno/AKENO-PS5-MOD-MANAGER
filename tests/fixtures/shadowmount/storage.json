@@ -1,0 +1,10 @@
+{
+  "status": 0, "count": 2, "destination_count": 1,
+  "mounts": [
+    {"source": "/dev/ssd0.user", "mount_point": "/user", "filesystem": "ufs", "total_bytes": 824633720832, "free_bytes": 412316860416, "available_bytes": 400000000000, "used_bytes": 424633720832, "read_only": false},
+    {"source": "/dev/da0s1", "mount_point": "/mnt/usb0", "filesystem": "exfatfs", "total_bytes": 1000000000000, "free_bytes": 500000000000, "available_bytes": 500000000000, "used_bytes": 500000000000, "read_only": false}
+  ],
+  "destinations": [
+    {"path": "/data/homebrew", "source": "/dev/ssd0.user", "mount_point": "/user", "filesystem": "ufs", "total_bytes": 824633720832, "free_bytes": 412316860416, "available_bytes": 400000000000, "used_bytes": 424633720832, "read_only": false}
+  ]
+}

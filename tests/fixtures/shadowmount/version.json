@@ -1,0 +1,6 @@
+{
+  "status": 0,
+  "api_version": 1,
+  "shadowmount_version": "1.7",
+  "capabilities": ["web_ui", "storage_space", "list_images", "list_games", "game_info", "game_icon", "mount_game", "unmount_game", "uninstall_game", "move_game_source", "copy_game_source", "delete_game_source", "unpack_game_image", "storage_job_status", "storage_job_cancel", "list_manual_sources", "add_manual_source", "remove_manual_source", "manage_settings", "read_debug_log", "read_kernel_log", "rescan"]
+}
