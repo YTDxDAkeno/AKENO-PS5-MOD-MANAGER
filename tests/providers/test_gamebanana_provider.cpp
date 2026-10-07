@@ -28,7 +28,7 @@ struct Fixture {
                      kBase + "/apiv11/Util/Game/NameMatch?_sName=" + network::percentEncode("Unknown Game"), 200,
                      R"({"_aRecords":[]})");
         http.respond(HttpMethod::Get,
-                     kBase + "/apiv11/Mod/Index?_nPerpage=30&_nPage=1&_aFilters%5BGeneric_Game%5D=21999", 200,
+                     kBase + "/apiv11/Mod/Index?_nPerpage=20&_nPage=1&_aFilters%5BGeneric_Game%5D=21999", 200,
                      R"({"_aMetadata":{"_nRecordCount":2},"_aRecords":[
                         {"_idRow":555,"_sModelName":"Mod","_sName":"HD <i>Textures</i>","_aSubmitter":{"_sName":"modder"},
                          "_sVersion":"2.0","_nLikeCount":7,

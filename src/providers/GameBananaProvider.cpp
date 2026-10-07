@@ -14,7 +14,7 @@ namespace akeno::providers {
 namespace {
 
 constexpr std::size_t kMaxBytes = 4 * 1024 * 1024;
-constexpr std::size_t kPerPage = 30;
+constexpr std::size_t kPerPage = 20;  // GameBanana's page size
 
 bool isNumber(std::string_view text) {
     return !text.empty() && text.size() <= 12 &&
@@ -178,7 +178,7 @@ Result<ModPage> GameBananaProvider::list(const SearchQuery& query, const Cancell
     }
     const std::string gameId = query.providerGameId.substr(kGameBananaGamePrefix.size());
     if (!isNumber(gameId)) return makeError(ErrorCode::InvalidArgument, "Not a GameBanana game.");
-    const std::size_t page = query.offset / kPerPage + 1;
+    const std::size_t page = (query.offset + kPerPage - 1) / kPerPage + 1;  // NSFW mods leave short pages
     std::string path = strings::concat("/apiv11/Mod/Index?_nPerpage=", kPerPage, "&_nPage=", page,
                                        "&_aFilters%5BGeneric_Game%5D=", gameId);
     if (query.order == BrowseOrder::Newest) path += "&_sSort=new";

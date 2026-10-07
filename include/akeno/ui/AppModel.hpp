@@ -141,6 +141,19 @@ struct InstalledModsSummary {
     std::optional<Error> error;  // the list could not be read
 };
 
+// One stored mod in the Installed Mods tab.
+struct InstalledModRow {
+    std::string titleId;
+    std::string gameName;
+    std::string downloadId;
+    std::string name;
+    std::string version;
+    std::string source;  // provider id
+    bool enabled = false;
+    bool overlayActive = false;  // of the game
+    std::uint64_t bytes = 0;
+};
+
 enum class ToastKind { Info, Success, Warning, Error };
 
 // Messages from background work, shown as toasts by the screen host.
@@ -210,6 +223,11 @@ public:
     virtual void setGameVanilla(const std::string& titleId) = 0;
     virtual InstalledModsSummary installedMods(const std::string& titleId) = 0;
     virtual bool installBusy() const = 0;
+    // Installed Mods tab: every stored mod; turning one on or off rebuilds the game's overlay;
+    // removing turns it off, rebuilds the overlay and deletes the stored copy.
+    virtual std::vector<InstalledModRow> listInstalledMods() = 0;
+    virtual void setInstalledModEnabled(const std::string& titleId, const std::string& downloadId, bool enabled) = 0;
+    virtual void removeInstalledMod(const std::string& titleId, const std::string& downloadId) = 0;
 
     // Asks the user for text; `done` receives the text, or nullopt when cancelled.
     virtual void requestTextInput(const std::string& prompt, const std::string& initial,

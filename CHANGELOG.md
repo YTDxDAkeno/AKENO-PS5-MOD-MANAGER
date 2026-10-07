@@ -37,6 +37,11 @@ tested on a Linux host; **not hardware tested yet.**
   requires) downloaded. Always EXPERIMENTAL. Nexus files have no published
   checksum: the size is checked and the SHA-256 recorded. See
   `docs/nexus-mods.md`. Tested with recorded answers only.
+- Installed Mods tab: every stored mod with ON/OFF, CROSS turns a mod on or
+  off (the overlay is rebuilt), SQUARE removes it (off, rebuilt, deleted),
+  TRIANGLE switches its game to Vanilla.
+- Mod lists page: moving past the last mod loads the next page (GameBanana
+  pages of 20), before the first the previous one.
 - After a console crash with two Reloaded-II mods: mods made for PC loaders
   (Reloaded-II, Fluffy Mod Manager) are PC ONLY, and PC-source mods (Nexus,
   GameBanana) may only add files, never replace the game's own.

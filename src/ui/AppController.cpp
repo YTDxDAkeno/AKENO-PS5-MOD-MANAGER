@@ -886,6 +886,7 @@ void AppController::installChecked(const std::string& id) {
             if (!alive->load()) return;
             installing_ = false;
             modSummaries_.clear();
+            installedRows_.reset();
             addNotice(message, kind);
         });
     });
@@ -921,6 +922,7 @@ void AppController::setGameVanilla(const std::string& titleId) {
             if (!alive->load()) return;
             installing_ = false;
             modSummaries_.clear();
+            installedRows_.reset();
             addNotice(message, kind);
         });
     });
@@ -983,6 +985,108 @@ void AppController::finishTextInput(bool accepted) {
     if (accepted) result = std::string(strings::trim(state_.textEntry.text));
     state_.textEntry = TextEntryView{};
     if (done) done(std::move(result));
+}
+
+}  // namespace akeno::ui
+
+namespace akeno::ui {
+
+install::TitleTarget AppController::targetFor(const std::string& titleId) const {
+    for (const auto& game : allGames_) {
+        if (game.titleId == titleId) return {titleId, game.mounted, game.installedPkg, game.installPath};
+    }
+    return {titleId, false, false, {}};
+}
+
+void AppController::runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work) {
+    if (installing_ || state_.check.running) {
+        addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
+        return;
+    }
+    const bool interrupted = context_.interruptedOperation().has_value();
+    installing_ = true;
+    auto alive = alive_;
+    tasks_.submit([this, work = std::move(work), interrupted, alive] {
+        install::InstallEnvironment env{context_.fs(),
+                                        context_.paths(),
+                                        context_.journal(),
+                                        interrupted,
+                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                        limits::kStorageSafetyReserveBytes,
+                                        {}};
+        auto result = work(env);
+        std::string message = result ? result.value() : result.error().message;
+        const ToastKind kind = result ? ToastKind::Success : ToastKind::Error;
+        mainQueue_.post([this, alive, message, kind] {
+            if (!alive->load()) return;
+            installing_ = false;
+            modSummaries_.clear();
+            installedRows_.reset();
+            addNotice(message, kind);
+        });
+    });
+}
+
+std::vector<InstalledModRow> AppController::listInstalledMods() {
+    if (installedRows_) return *installedRows_;
+    std::vector<InstalledModRow> rows;
+    install::InstallEnvironment env{context_.fs(),
+                                    context_.paths(),
+                                    context_.journal(),
+                                    false,
+                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                    limits::kStorageSafetyReserveBytes,
+                                    {}};
+    std::error_code ec;
+    std::vector<std::string> titles;
+    for (std::filesystem::directory_iterator it(context_.paths().mods(), ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (games::isValidTitleId(name)) titles.push_back(name);
+    }
+    std::sort(titles.begin(), titles.end());
+    for (const auto& titleId : titles) {
+        auto state = install::loadTitleState(env, titleId);
+        if (!state) {
+            logger().warn("install", titleId + ": " + state.error().describe());
+            continue;
+        }
+        std::string gameName = titleId;
+        for (const auto& game : allGames_) {
+            if (game.titleId == titleId) gameName = game.name;
+        }
+        for (const auto& mod : state->mods) {
+            rows.push_back({titleId, gameName, mod.downloadId, mod.name, mod.version, mod.mod.providerId, mod.enabled,
+                            state->overlayActive, mod.bytes});
+        }
+    }
+    installedRows_ = rows;
+    return rows;
+}
+
+void AppController::setInstalledModEnabled(const std::string& titleId, const std::string& downloadId, bool enabled) {
+    const install::TitleTarget target = targetFor(titleId);
+    runModChange([target, downloadId, enabled](install::InstallEnvironment& env) -> Result<std::string> {
+        AKENO_TRY(install::setModEnabled(env, target.titleId, downloadId, enabled));
+        auto applied = install::applyOverlay(target, env);
+        if (!applied) {
+            // Keep the list as it was when the overlay could not follow.
+            (void)install::setModEnabled(env, target.titleId, downloadId, !enabled);
+            return std::move(applied).error();
+        }
+        return std::string(enabled ? "Mod turned on. Active the next time the game starts."
+                                   : "Mod turned off. The game starts without it next time.");
+    });
+}
+
+void AppController::removeInstalledMod(const std::string& titleId, const std::string& downloadId) {
+    const install::TitleTarget target = targetFor(titleId);
+    runModChange([target, downloadId](install::InstallEnvironment& env) -> Result<std::string> {
+        AKENO_TRY(install::setModEnabled(env, target.titleId, downloadId, false));
+        auto applied = install::applyOverlay(target, env);
+        if (!applied) return std::move(applied).error();
+        AKENO_TRY(install::removeStoredMod(env, target.titleId, downloadId));
+        return std::string("Mod removed. Its files were deleted and the game's overlay rebuilt without it.");
+    });
 }
 
 }  // namespace akeno::ui

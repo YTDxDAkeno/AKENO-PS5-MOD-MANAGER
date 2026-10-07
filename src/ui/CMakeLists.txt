@@ -15,6 +15,7 @@ add_library(akeno_ui STATIC
     screens/FlowScreens.cpp
     screens/ModScreens.cpp
     screens/DownloadScreens.cpp
+    screens/InstalledModsScreen.cpp
 )
 target_link_libraries(akeno_ui PUBLIC akeno_core PRIVATE akeno_warnings)
 

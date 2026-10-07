@@ -266,6 +266,7 @@ void ModBrowserScreen::update(UiEnv& env) {
         if (*text != query_.text) {
             query_.text = *text;
             query_.offset = 0;
+            previousPages_.clear();
             list_.setFocus(0);
         }
     }
@@ -287,6 +288,26 @@ NavRequest ModBrowserScreen::handle(Action action, UiEnv& env) {
     if (list_.handle(action)) {
         return NavRequest::none();
     }
+    // Paging: moving past the last mod loads the next page, before the first the previous one.
+    if (mods != nullptr && !view.loading) {
+        const bool forward = action == Action::Down || action == Action::PageDown;
+        const bool backward = action == Action::Up || action == Action::PageUp;
+        if (forward && !mods->empty() && list_.focus() == static_cast<int>(mods->size()) - 1 &&
+            query_.offset + mods->size() < view.page->total) {
+            previousPages_.push_back(query_.offset);
+            query_.offset += mods->size();
+            list_.setFocus(0);
+            env.commands.loadModList(query_);
+            return NavRequest::none();
+        }
+        if (backward && list_.focus() == 0 && !previousPages_.empty()) {
+            query_.offset = previousPages_.back();
+            previousPages_.pop_back();
+            list_.setFocus(0);
+            env.commands.loadModList(query_);
+            return NavRequest::none();
+        }
+    }
     switch (action) {
         case Action::Confirm:
             if (mods != nullptr && !mods->empty()) {
@@ -297,6 +318,7 @@ NavRequest ModBrowserScreen::handle(Action action, UiEnv& env) {
         case Action::Secondary:
             query_.order = nextOrder(query_.order);
             query_.offset = 0;
+            previousPages_.clear();
             list_.setFocus(0);
             env.commands.loadModList(query_);
             env.showToast(strings::concat("Order: ", orderLabel(query_.order)));
@@ -308,6 +330,7 @@ NavRequest ModBrowserScreen::handle(Action action, UiEnv& env) {
             if (!query_.text.empty()) {
                 query_.text.clear();
                 query_.offset = 0;
+            previousPages_.clear();
                 list_.setFocus(0);
                 env.commands.loadModList(query_);
                 env.showToast("Search cleared");
@@ -402,8 +425,8 @@ void ModBrowserScreen::render(ICanvas& canvas, UiEnv& env) {
         canvas.drawText(mod.shortDescription, {textX, box.y + 84, box.right() - textX - 24, 34},
                         TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Left, false});
     }
-    std::string position = strings::concat(list_.focus() + 1, " of ", mods.size());
-    if (view.page->total > mods.size()) position += strings::concat(" (first ", mods.size(), " of ", view.page->total, ")");
+    std::string position = strings::concat(query_.offset + list_.focus() + 1, " of ", std::max(view.page->total, query_.offset + mods.size()));
+    if (view.page->total > query_.offset + mods.size()) position += "   (DOWN at the end: next page)";
     canvas.drawText(position, {content.x, content.y + 52, content.w, 40},
                     TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Right, false});
 }

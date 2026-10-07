@@ -376,3 +376,41 @@ TEST_CASE("toasts expire") {
     host.render(canvas, h.env);
     CHECK(host.toasts().empty());
 }
+
+TEST_CASE("installed mods can be turned off, removed, and a game switched to Vanilla") {
+    test::UiHarness h;
+    InstalledModsScreen screen;
+    test::RecordingCanvas canvas;
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("No mods installed"));
+    h.commands.installedRows = {
+        {"PPSA24701", "Digimon", "aaaa1111", "Playable Sayo", "1.0.6", "gamebanana", true, true, 1000},
+        {"PPSA24701", "Digimon", "bbbb2222", "Kotone", "1.0.2", "gamebanana", false, true, 2000},
+    };
+    canvas.clear();
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("Installed mods (2)"));
+    CHECK(canvas.hasText("ON"));
+    screen.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.toggles.size() == 1);
+    CHECK(h.commands.toggles[0] == "PPSA24701/aaaa1111:off");
+
+    auto nav = screen.handle(Action::Tertiary, h.env);
+    auto* confirm = dynamic_cast<ConfirmScreen*>(nav.screen.get());
+    REQUIRE(confirm != nullptr);
+    confirm->handle(Action::Up, h.env);
+    confirm->handle(Action::Confirm, h.env);
+    screen.update(h.env);
+    REQUIRE(h.commands.removals.size() == 1);
+    CHECK(h.commands.removals[0] == "PPSA24701/aaaa1111");
+
+    screen.handle(Action::Down, h.env);
+    nav = screen.handle(Action::Secondary, h.env);
+    confirm = dynamic_cast<ConfirmScreen*>(nav.screen.get());
+    REQUIRE(confirm != nullptr);
+    confirm->handle(Action::Up, h.env);
+    confirm->handle(Action::Confirm, h.env);
+    screen.update(h.env);
+    REQUIRE(h.commands.vanillas.size() == 1);
+    CHECK(h.commands.vanillas[0] == "PPSA24701");
+}

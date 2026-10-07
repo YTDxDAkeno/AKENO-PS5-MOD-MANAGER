@@ -404,14 +404,7 @@ void setupScreens(ScreenHost& host, const AppViewState& state) {
     host.setTabRoot(Tab::Games, std::make_unique<GameLibraryScreen>());
     host.setTabRoot(Tab::Discover, std::make_unique<DiscoverScreen>());
     host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
-    host.setTabRoot(Tab::InstalledMods,
-                    std::make_unique<PlannedFeatureScreen>(
-                        "Installed Mods", "Planned for Phases 5 and 6",
-                        std::vector<std::string>{
-                            "Mods will be applied through ShadowMountPlus overlays. Original game files are never "
-                            "modified.",
-                            "Enable, disable and reorder mods. Conflicts are shown before anything changes.",
-                            "A permanent Vanilla profile always restores the unmodified game."}));
+    host.setTabRoot(Tab::InstalledMods, std::make_unique<InstalledModsScreen>());
     host.setTabRoot(Tab::Updates,
                     std::make_unique<PlannedFeatureScreen>(
                         "Updates", "Planned for Phase 6",

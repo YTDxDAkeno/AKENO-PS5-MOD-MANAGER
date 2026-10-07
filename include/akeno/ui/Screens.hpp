@@ -100,6 +100,7 @@ private:
     providers::SearchQuery query_;
     FocusList list_;
     TextRequest search_;
+    std::vector<std::size_t> previousPages_;  // offsets of the pages before this one
 };
 
 class ModDetailScreen final : public Screen {
@@ -147,6 +148,24 @@ private:
     FocusList list_;
     ChoiceRequest confirmRemove_;
     std::string removeId_;
+};
+
+// Every stored mod: turn on or off, remove, or switch a game to Vanilla.
+class InstalledModsScreen final : public Screen {
+public:
+    static constexpr int kVisibleRows = 6;
+
+    std::string title() const override { return "Installed Mods"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+
+private:
+    FocusList list_;
+    ChoiceRequest confirmRemove_;
+    ChoiceRequest confirmVanilla_;
+    InstalledModRow pending_;
 };
 
 // The result of checking a downloaded mod: findings, conflicts, the dry-run install plan and

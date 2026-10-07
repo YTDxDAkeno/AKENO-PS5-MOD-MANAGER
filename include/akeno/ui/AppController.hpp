@@ -15,6 +15,7 @@
 
 #include "akeno/app/AppContext.hpp"
 #include "akeno/core/Tasks.hpp"
+#include "akeno/install/OverlayManager.hpp"
 #include "akeno/ui/AppModel.hpp"
 
 namespace akeno::ui {
@@ -72,6 +73,9 @@ public:
     void setGameVanilla(const std::string& titleId) override;
     InstalledModsSummary installedMods(const std::string& titleId) override;
     bool installBusy() const override { return installing_; }
+    std::vector<InstalledModRow> listInstalledMods() override;
+    void setInstalledModEnabled(const std::string& titleId, const std::string& downloadId, bool enabled) override;
+    void removeInstalledMod(const std::string& titleId, const std::string& downloadId) override;
 
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override;
@@ -113,6 +117,10 @@ private:
     bool quit_ = false;
     bool installing_ = false;  // one install or Vanilla at a time; never during a check
     std::unordered_map<std::string, InstalledModsSummary> modSummaries_;  // read once, dropped after changes
+    std::optional<std::vector<InstalledModRow>> installedRows_;            // same
+    // Runs one change to installed mods on the worker; `work` returns the message to show.
+    void runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work);
+    install::TitleTarget targetFor(const std::string& titleId) const;
 };
 
 }  // namespace akeno::ui

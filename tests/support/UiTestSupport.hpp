@@ -159,6 +159,16 @@ public:
         return it == installedSummaries.end() ? ui::InstalledModsSummary{} : it->second;
     }
     bool installBusy() const override { return false; }
+    std::vector<ui::InstalledModRow> listInstalledMods() override { return installedRows; }
+    void setInstalledModEnabled(const std::string& titleId, const std::string& id, bool enabled) override {
+        toggles.push_back(titleId + "/" + id + (enabled ? ":on" : ":off"));
+    }
+    void removeInstalledMod(const std::string& titleId, const std::string& id) override {
+        removals.push_back(titleId + "/" + id);
+    }
+    std::vector<ui::InstalledModRow> installedRows;
+    std::vector<std::string> toggles;
+    std::vector<std::string> removals;
     std::vector<std::string> installs;
     std::vector<std::string> vanillas;
     std::map<std::string, ui::InstalledModsSummary> installedSummaries;
