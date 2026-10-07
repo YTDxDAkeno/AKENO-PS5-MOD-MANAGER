@@ -58,6 +58,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
 pkg_check_modules(CRYPTO REQUIRED IMPORTED_TARGET libcrypto)
+pkg_check_modules(ARCHIVE REQUIRED IMPORTED_TARGET libarchive)
 
 if(AKENO_TARGET_PS5)
     # pacbrew installs SQLite without a pkg-config file.
@@ -108,6 +109,9 @@ add_library(akeno_core STATIC
     src/downloads/DownloadTypes.cpp
     src/downloads/DownloadStore.cpp
     src/downloads/DownloadManager.cpp
+    src/archives/SecureExtractor.cpp
+    src/mods/ModAnalyzer.cpp
+    src/mods/ModCheck.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp
@@ -132,7 +136,7 @@ set_source_files_properties(src/app/Headless.cpp PROPERTIES COMPILE_DEFINITIONS
     "AKENO_DOWNLOAD_TEST_SHA256=\"${AKENO_DOWNLOAD_TEST_SHA256}\";AKENO_DOWNLOAD_TEST_SIZE=${AKENO_DOWNLOAD_TEST_SIZE}")
 target_link_libraries(akeno_core
     PUBLIC akeno_third_party
-    PRIVATE akeno_warnings PkgConfig::CURL PkgConfig::CRYPTO akeno_sqlite3)
+    PRIVATE akeno_warnings PkgConfig::CURL PkgConfig::CRYPTO PkgConfig::ARCHIVE akeno_sqlite3)
 find_package(Threads REQUIRED)
 target_link_libraries(akeno_core PUBLIC Threads::Threads)
 

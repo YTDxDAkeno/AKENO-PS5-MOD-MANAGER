@@ -69,9 +69,18 @@ CREATE TABLE downloads (
 CREATE INDEX downloads_by_mod ON downloads(provider_id, mod_id, mod_version);
 )sql";
 
-constexpr std::array<Migration, 2> kMigrations{{
+// Migration 3 — Phase 4 (analysis). Where a download's files go, as the catalogue said when it
+// was requested, so a later check does not depend on the network.
+constexpr const char* kMigration3 = R"sql(
+ALTER TABLE downloads ADD COLUMN archive_root TEXT NOT NULL DEFAULT '';
+ALTER TABLE downloads ADD COLUMN target_prefix TEXT NOT NULL DEFAULT '';
+ALTER TABLE downloads ADD COLUMN catalogue_installable INTEGER NOT NULL DEFAULT 0;
+)sql";
+
+constexpr std::array<Migration, 3> kMigrations{{
     {1, "phase1: settings and game snapshot", kMigration1},
     {2, "phase3: downloads", kMigration2},
+    {3, "phase4: install layout of downloads", kMigration3},
 }};
 
 }  // namespace

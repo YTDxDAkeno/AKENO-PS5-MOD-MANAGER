@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build pkg-config \
-            libcurl4-openssl-dev libsqlite3-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
+            libcurl4-openssl-dev libsqlite3-dev libarchive-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAKENO_WARNINGS_AS_ERRORS=ON
@@ -62,13 +62,15 @@ jobs:
         run: |
           ./build/src/ui/AkenoModManager --data-root "$RUNNER_TEMP/akeno-ui" \
             --catalogue-url http://127.0.0.1:10101/catalog/ --window 1920x1080 --ui-script \
-            "wait:3,shot:01-first-run,confirm,wait:3,confirm,wait:1,confirm,wait:2,confirm,confirm,confirm,confirm,wait:2,shot:02-home,next-tab,wait:2,shot:03-games,confirm,wait:2,shot:04-details,back,next-tab,wait:2,shot:06-discover,confirm,wait:2,shot:07-mods,tertiary,type:hair,wait:2,shot:08-search,options,wait:2,confirm,wait:2,shot:09-mod-details,down,confirm,wait:2,shot:10-screenshot,back,up,confirm,wait:3,shot:11-downloaded,back,back,back,next-tab,wait:1,shot:12-downloads,next-tab,next-tab,next-tab,shot:05-settings,quit"
+            "wait:3,shot:01-first-run,confirm,wait:3,confirm,wait:1,confirm,wait:2,confirm,confirm,confirm,confirm,wait:2,shot:02-home,next-tab,wait:2,shot:03-games,confirm,wait:2,shot:04-details,back,next-tab,wait:2,shot:06-discover,confirm,wait:2,shot:07-mods,tertiary,type:hair,wait:2,shot:08-search,options,wait:2,confirm,wait:2,shot:09-mod-details,down,confirm,wait:2,shot:10-screenshot,back,up,confirm,wait:3,shot:11-downloaded,back,back,back,next-tab,wait:1,shot:12-downloads,confirm,wait:3,shot:13-check,back,next-tab,next-tab,next-tab,shot:05-settings,quit"
           ls "$RUNNER_TEMP/akeno-ui/logs"
-          for shot in 01-first-run 02-home 03-games 04-details 05-settings 06-discover 07-mods 08-search 09-mod-details 10-screenshot 11-downloaded 12-downloads; do
+          for shot in 01-first-run 02-home 03-games 04-details 05-settings 06-discover 07-mods 08-search 09-mod-details 10-screenshot 11-downloaded 12-downloads 13-check; do
             test -s "$RUNNER_TEMP/akeno-ui/logs/$shot.png"
           done
           grep -q "catalogue loaded: 3 games" "$RUNNER_TEMP/akeno-ui/logs/akeno.log"
           grep -q "completed and verified" "$RUNNER_TEMP/akeno-ui/logs/akeno.log"
+          grep -q "files to install" "$RUNNER_TEMP/akeno-ui/logs/akeno.log"
+          test -z "$(ls -A "$RUNNER_TEMP/akeno-ui/staging")"
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
@@ -86,7 +88,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build pkg-config \
-            libcurl4-openssl-dev libsqlite3-dev
+            libcurl4-openssl-dev libsqlite3-dev libarchive-dev
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAKENO_BUILD_APP=OFF -DAKENO_SANITIZE=ON
       - name: Build

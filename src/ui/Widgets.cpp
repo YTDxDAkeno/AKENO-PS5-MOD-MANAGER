@@ -278,6 +278,44 @@ void messagePanel(ICanvas& canvas, const Rect& rect, std::string_view heading, s
                     std::max(1, (rect.h - 130) / 46));
 }
 
+void addWrappedLines(ICanvas& canvas, std::vector<DocLine>& lines, std::string_view text, int width, FontRole role,
+                     Color color, bool bold, std::optional<Color> dot) {
+    bool first = true;
+    for (auto& line : wrapText(canvas, text, width - (dot ? 40 : 0), role, bold)) {
+        lines.push_back(DocLine{std::move(line), role, color, bold, first ? dot : std::nullopt});
+        first = false;
+    }
+}
+
+void addHeadingLine(std::vector<DocLine>& lines, std::string text) {
+    if (!lines.empty()) lines.push_back(DocLine{});
+    lines.push_back(DocLine{std::move(text), FontRole::Body, theme::kTextPrimary, true, std::nullopt});
+}
+
+void drawDocument(ICanvas& canvas, const std::vector<DocLine>& lines, const Rect& area, int& scroll, int& maxScroll) {
+    const int visible = std::max(1, area.h / kDocLineHeight);
+    maxScroll = std::max(0, static_cast<int>(lines.size()) - visible);
+    scroll = std::clamp(scroll, 0, maxScroll);
+    for (int i = 0; i < visible && scroll + i < static_cast<int>(lines.size()); ++i) {
+        const DocLine& line = lines[static_cast<std::size_t>(scroll + i)];
+        const int y = area.y + i * kDocLineHeight;
+        int x = area.x;
+        if (line.dot) {
+            canvas.fillCircle(x + 12, y + kDocLineHeight / 2, 10, *line.dot);
+            x += 40;
+        }
+        canvas.drawText(line.text, {x, y, area.right() - x - 30, kDocLineHeight},
+                        TextStyle{line.role, line.color, TextAlign::Left, line.bold});
+    }
+    if (maxScroll > 0) {
+        const Rect track{area.right() - 10, area.y, 8, visible * kDocLineHeight};
+        canvas.fillRoundedRect(track, 4, theme::kPanelRaised);
+        const int thumbH = std::max(40, track.h * visible / static_cast<int>(lines.size()));
+        const int thumbY = track.y + (track.h - thumbH) * scroll / maxScroll;
+        canvas.fillRoundedRect({track.x, thumbY, track.w, thumbH}, 4, theme::kAccent);
+    }
+}
+
 }  // namespace draw
 
 }  // namespace akeno::ui

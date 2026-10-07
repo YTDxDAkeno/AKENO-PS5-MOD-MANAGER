@@ -26,6 +26,8 @@ upgraded without evidence.
 | Remote images (download, validation, cache) | ✓ host + PS5 | ✓ (loopback server) | ✓ (mock server) | ✗ |
 | Search keyboard (system IME dialog) | ✓ PS5 | ✓ (text entry logic) | desktop keyboard only | ✗ |
 | Download engine (resume, retry, SHA-256, reserve) | ✓ host + PS5 | ✓ (loopback server, real libcurl) | ✓ (mock server, UI and `--download-test`) | ✗ |
+| Secure extraction (libarchive) | ✓ host + PS5 | ✓ (hostile archives written by libarchive) | ✓ (UI and `--download-test`) | ✗ |
+| Mod analyser, conflicts, dry-run plan | ✓ host + PS5 | ✓ | ✓ (demo catalogue) | ✗ |
 | Controller mapping on PS5 | ✓ PS5 | ✓ (mapping table) | – | ✗ |
 | Notifications, firmware detection | ✓ PS5 | ✓ (version decoding) | – | ✗ |
 

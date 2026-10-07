@@ -86,6 +86,9 @@ Status validateRequest(const DownloadRequest& request) {
     if (request.mod.providerId.empty() || request.mod.modId.empty() || request.mod.modId.size() > 255) {
         return makeError(ErrorCode::InvalidArgument, "The download does not name its mod.");
     }
+    if (!mods::isSafeRelativePath(request.archiveRoot) || !mods::isSafeRelativePath(request.targetPrefix)) {
+        return makeError(ErrorCode::SafetyViolation, "The mod's install folders are not safe paths.");
+    }
     if (request.displayName.empty() || request.displayName.size() > limits::kMaxDisplayStringBytes) {
         return makeError(ErrorCode::InvalidArgument, "The download has no valid name.");
     }

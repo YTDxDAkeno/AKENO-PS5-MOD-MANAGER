@@ -17,6 +17,7 @@
 #include "akeno/downloads/DownloadTypes.hpp"
 #include "akeno/games/GameInfo.hpp"
 #include "akeno/logging/Logger.hpp"
+#include "akeno/mods/ModCheck.hpp"
 #include "akeno/providers/IModProvider.hpp"
 
 namespace akeno::ui {
@@ -122,6 +123,16 @@ struct DownloadsView {
     }
 };
 
+// The check (Phase 4) of one downloaded mod.
+struct ModCheckView {
+    std::string downloadId;
+    bool running = false;
+    mods::CheckPhase phase = mods::CheckPhase::Inspecting;
+    double progress = 0.0;                       // of the current phase
+    std::optional<Error> error;
+    std::optional<mods::ModCheckReport> report;  // with conflicts and plan
+};
+
 enum class ToastKind { Info, Success, Warning, Error };
 
 // Messages from background work, shown as toasts by the screen host.
@@ -139,6 +150,7 @@ struct AppViewState {
     ModDetailView modDetail;
     TextEntryView textEntry;
     DownloadsView downloads;
+    ModCheckView check;
     std::vector<Notice> notices;               // the most recent ones; serials increase
     database::Settings settings;
     bool settingsPersistent = true;            // false when the database is unavailable
@@ -178,6 +190,11 @@ public:
     virtual Status pauseDownload(const std::string& id) = 0;
     virtual Status resumeDownload(const std::string& id) = 0;
     virtual Status removeDownload(const std::string& id) = 0;
+
+    // Checks a completed download (Phase 4): unpack into staging, analyse, plan, clean up.
+    // A stored result is shown unless `again` is set.
+    virtual void checkDownload(const std::string& id, bool again) = 0;
+    virtual void cancelCheck() = 0;
 
     // Asks the user for text; `done` receives the text, or nullopt when cancelled.
     virtual void requestTextInput(const std::string& prompt, const std::string& initial,

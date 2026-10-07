@@ -66,6 +66,8 @@ public:
     Status pauseDownload(const std::string& id) override;
     Status resumeDownload(const std::string& id) override;
     Status removeDownload(const std::string& id) override;
+    void checkDownload(const std::string& id, bool again) override;
+    void cancelCheck() override;
 
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override;
@@ -82,6 +84,7 @@ private:
     void resetCatalogView();
     void pruneImageCache();
     void refreshDownloads();
+    void removeOrphanReports();
     void addNotice(std::string text, ToastKind kind);
     Result<std::string> fetchIcon(const games::GameInfo& game);
     Result<std::string> fetchRemoteImage(const std::string& url);
@@ -95,6 +98,7 @@ private:
     std::uint64_t catalogGeneration_ = 0;  // bumped when the catalogue address changes
     CancellationToken listCancel_;
     CancellationToken detailCancel_;
+    CancellationToken checkCancel_;
     std::unordered_map<std::string, std::string> urlKeys_;  // url -> sha256, memoised for drawing
     std::function<void(std::optional<std::string>)> textInputDone_;
     std::uint64_t noticeSerial_ = 0;

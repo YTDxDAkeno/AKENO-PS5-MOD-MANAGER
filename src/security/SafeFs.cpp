@@ -137,9 +137,9 @@ Status WritableFile::sync() {
     return {};
 }
 
-Status WritableFile::close() {
+Status WritableFile::close(bool flush) {
     if (fd_ < 0) return {};
-    Status synced = sync();
+    Status synced = flush ? sync() : Status{};
     const int result = ::close(fd_);
     const int err = errno;
     fd_ = -1;
@@ -148,16 +148,23 @@ Status WritableFile::close() {
     return {};
 }
 
-Result<std::unique_ptr<WritableFile>> SafeFs::openForWriting(const fs::path& target, bool append) const {
+Result<std::unique_ptr<WritableFile>> SafeFs::openForWriting(const fs::path& target, WriteMode mode) const {
     auto checked = guard_.checkWritable(target);
     if (!checked) {
         return std::move(checked).error();
     }
     const fs::path& path = checked.value();
     int flags = O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC;
-    flags |= append ? O_APPEND : O_TRUNC;
+    switch (mode) {
+        case WriteMode::Truncate: flags |= O_TRUNC; break;
+        case WriteMode::Append: flags |= O_APPEND; break;
+        case WriteMode::CreateNew: flags |= O_EXCL; break;
+    }
     int fd = ::open(path.c_str(), flags, 0644);
     if (fd < 0) {
+        if (errno == EEXIST) {
+            return makeError(ErrorCode::AlreadyExists, "The file already exists.", path.string());
+        }
         return ioError("Could not open a file for writing.", path, errno);
     }
     struct stat info {};

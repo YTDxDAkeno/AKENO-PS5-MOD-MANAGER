@@ -38,6 +38,10 @@ struct DownloadRequest {
     std::uint64_t expectedSize = 0;
     std::string expectedSha256; // lower-case hex, required
     mods::ArchiveFormat format = mods::ArchiveFormat::Unknown;
+    // From the manifest: which folder of the archive is the mod, and where it goes in the game.
+    std::string archiveRoot;
+    std::string targetPrefix;
+    bool catalogueInstallable = false;  // the compatibility rules allowed installing at request time
 };
 
 struct DownloadRecord {

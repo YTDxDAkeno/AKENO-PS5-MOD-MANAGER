@@ -72,6 +72,7 @@ std::string kindNoun(const std::string& kind) {
     if (kind == "update") return "mod update";
     if (kind == "rollback") return "rollback";
     if (kind == "download") return "download";
+    if (kind == "check") return "mod check";
     return "operation";
 }
 

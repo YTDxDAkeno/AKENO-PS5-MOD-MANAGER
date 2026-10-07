@@ -28,9 +28,10 @@ sha256sum -c SHA256SUMS
 `AkenoSelfCheck.elf` has no user interface and never touches video output.
 It reads system state, ShadowMountPlus's version and game list, and writes
 reports. When the network check passes, it also downloads a 276-byte
-harmless test file (`assets/test/download-test.zip` from this repository's
-`main` branch) through the download engine, checks its SHA-256 and deletes
-it again.
+harmless test archive (`assets/test/download-test.zip` from this repository's
+`main` branch) through the download engine, checks its SHA-256, unpacks it into
+Akeno's staging folder, analyses it, deletes the staging folder, describes the
+(not executed) install plan and deletes the download again.
 
 1. Start your homebrew environment and ShadowMountPlus.
 2. Send `AkenoSelfCheck.elf` to your payload loader, for example:
@@ -44,7 +45,7 @@ it again.
    * `/data/akeno-mod-manager/logs/download-test-<time>.txt`
    * `/data/akeno-mod-manager/logs/akeno.log`
 
-This covers steps 1–6 of the testing ladder in
+This covers steps 1–9 of the testing ladder in
 [safety-model.md](safety-model.md#9-testing-ladder-on-real-hardware).
 The test file is published with the `main` branch; a build made before it
 was merged reports *HTTP 404* for that step.
@@ -74,10 +75,12 @@ To exit, choose **Settings → Exit Akeno Mod Manager**.
   database/akeno.sqlite    settings, game history, download list
   cache/icons/             game icons copied from ShadowMountPlus
   cache/images/            mod thumbnails and screenshots
+  cache/analysis/          results of mod checks (one JSON file per download)
   downloads/               <id>.partial while downloading, <id>.zip once checked
   logs/                    akeno.log, reports, diagnostic exports
   backups/                 database backups made before upgrades
-  staging/ mods/ overlays/ profiles/   (empty until later phases)
+  staging/                 temporary folders of mod checks, deleted afterwards
+  mods/ overlays/ profiles/   (empty until later phases)
 ```
 
 Downloaded files are named by Akeno (16 hexadecimal digits), never by the

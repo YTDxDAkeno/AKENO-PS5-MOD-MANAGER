@@ -11,7 +11,7 @@ Code review checks changes against it.
 | --- | --- | --- |
 | H1 | Never write to `/system`, `/system_ex`, `/preinst`, `/preinst2`, `/update`, `/system_data`, `/system_tmp`, `/dev`, boot/firmware/kernel storage. Never remount anything writable. | `security::WriteGuard` hard deny-list (checked before the allow-list). There is no remount code in the project. |
 | H2 | If the exact destination of a write is not known, do not write. | Every write goes through `WriteGuard::checkWritable()`, which requires an absolute, normalized path inside an allowed root with **no symlink components** below the root. |
-| H3 | Never execute downloaded code, including PS5 ELF/SELF/SPRX, Windows PE (`.exe`/`.dll`), scripts, or `fakelib` library overlays. | No `exec`/`dlopen`/payload-load path takes downloaded data. The analyzer (Phase 4) classifies native code as *unsupported*. `fakelib`/`fakelib2` top-level entries are rejected. |
+| H3 | Never execute downloaded code, including PS5 ELF/SELF/SPRX, Windows PE (`.exe`/`.dll`), scripts, or `fakelib` library overlays. | No `exec`/`dlopen`/payload-load path takes downloaded data. `mods::analyzeMod` detects code by magic bytes and names: console code (and `fakelib`, `sce_sys`, `sce_module`) makes a mod INCOMPATIBLE, Windows code or UE4SS makes it PC ONLY; both block installing. |
 | H4 | If compatibility cannot be established, the label is `UNKNOWN`. Nothing is guessed `VERIFIED`. | Compatibility engine defaults (Phase 4). `VERIFIED` requires a catalogue record that matches title ID **and** game version. |
 | H5 | There is always a way back to **Vanilla / no mods** without reinstalling the game. | Mods never modify original files. Removing Akeno's generated backport directory restores vanilla (Phase 5). The Vanilla profile is permanent and cannot be deleted. |
 
@@ -51,11 +51,14 @@ screenshots, archive entry names and sizes, and server-supplied filenames.
   rejected.
 * **Filenames:** local filenames are generated from validated identifiers.
   Server-supplied names are never used as paths.
-* **Archives (Phase 4):** reject absolute paths, `..` components, drive
-  letters, backslash tricks, NUL bytes, over-long names, hardlinks,
-  symlinks, devices, FIFOs and sockets. Extract only into a fresh staging
-  directory, then re-scan the extracted tree with `lstat` and canonical
-  paths before anything is used.
+* **Archives (`archives::SecureExtractor`):** reject absolute paths, `..`
+  and `.` components, drive letters and colons, backslashes, control
+  characters, invalid UTF-8, over-long names, duplicates, hard links,
+  symlinks, devices, FIFOs, sockets and encrypted entries, and enforce entry
+  count, size, depth and compression-ratio limits. Extract only into a fresh
+  staging directory (files created with `O_EXCL`), count real sizes, then
+  re-scan the extracted tree with `lstat` before anything is used. One bad
+  entry refuses the whole archive.
 * **Images:** PNG/JPEG dimensions are read from the header and limited
   before decoding.
 

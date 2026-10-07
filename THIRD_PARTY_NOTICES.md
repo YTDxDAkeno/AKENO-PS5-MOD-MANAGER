@@ -29,6 +29,8 @@ ShadowMountPlus only through its documented HTTP API.
 | FreeType | 2.13.2 | FreeType License (FTL), used under FTL |
 | libpng | 1.6.43 | libpng license |
 | libwebp / libsharpyuv | 1.4.0 | BSD-3-Clause |
+| libarchive | 3.7.4 | BSD-2-Clause |
+| liblzma (XZ Utils) | 5.4.6 | 0BSD / public domain |
 | zlib | 1.3.2 | zlib |
 | bzip2 | 1.0.8 | bzip2 license (BSD-style) |
 | zstd | 1.5.6 | BSD-3-Clause |
@@ -58,5 +60,5 @@ Portions of this software are copyright © The FreeType Project
 
 ## Host builds
 
-Host (desktop) builds link the system's libcurl, SQLite and SDL2 libraries
-under their respective licenses. Host builds are for development and testing.
+Host (desktop) builds link the system's libcurl, OpenSSL, SQLite, libarchive and
+SDL2 libraries under their respective licenses. Host builds are for development and testing.

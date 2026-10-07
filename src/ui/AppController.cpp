@@ -2,6 +2,7 @@
 #include "akeno/ui/AppController.hpp"
 
 #include <algorithm>
+#include <mutex>
 #include <system_error>
 
 #include "akeno/core/BuildInfo.hpp"
@@ -10,6 +11,7 @@
 #include "akeno/database/Database.hpp"
 #include "akeno/games/GameLibrary.hpp"
 #include "akeno/mods/Catalog.hpp"
+#include "akeno/mods/ModCheck.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
 #include "akeno/security/ImageProbe.hpp"
 #include "akeno/security/SafeName.hpp"
@@ -39,7 +41,8 @@ std::string_view statusLabel(providers::CompatibilityStatus status) {
 
 // Turns a mod into a download request. The compatibility rules are applied here, whatever the
 // screen offered: mods that may not be installed on PS5 are never downloaded for installing.
-Result<downloads::DownloadRequest> buildDownloadRequest(providers::IModProvider& provider, const providers::ModRef& ref,
+Result<downloads::DownloadRequest> buildDownloadRequest(providers::AkenoCatalogProvider& provider,
+                                                        const providers::ModRef& ref,
                                                         const std::optional<providers::GameContext>& game,
                                                         bool confirmed) {
     auto details = provider.getModDetails(ref, game, nullptr);
@@ -83,7 +86,23 @@ Result<downloads::DownloadRequest> buildDownloadRequest(providers::IModProvider&
     request.expectedSize = ticket->expectedSize;
     request.expectedSha256 = ticket->expectedSha256;
     request.format = mods::parseArchiveFormat(ticket->format);
+    request.catalogueInstallable = details->installable;
+    auto manifest = provider.manifest(ref, nullptr);
+    if (!manifest) {
+        return std::move(manifest).error();
+    }
+    request.archiveRoot = manifest->archiveRoot;
+    request.targetPrefix = manifest->targetPrefix;
     return request;
+}
+
+providers::CompatibilityStatus statusFromLabel(std::string_view label) {
+    for (auto status : {providers::CompatibilityStatus::Verified, providers::CompatibilityStatus::Likely,
+                        providers::CompatibilityStatus::Experimental, providers::CompatibilityStatus::PcOnly,
+                        providers::CompatibilityStatus::Incompatible}) {
+        if (statusLabel(status) == label) return status;
+    }
+    return providers::CompatibilityStatus::Unknown;
 }
 
 bool sameGame(const std::optional<providers::GameContext>& a, const std::optional<providers::GameContext>& b) {
@@ -145,6 +164,21 @@ void AppController::start() {
         addNotice("Downloads are unavailable: " + started.error().message, ToastKind::Error);
     }
     refreshDownloads();
+    removeOrphanReports();
+}
+
+void AppController::removeOrphanReports() {
+    // Check reports belong to downloads; remove those whose download is gone.
+    std::error_code ec;
+    const auto directory = context_.paths().cache() / "analysis";
+    for (std::filesystem::directory_iterator it(directory, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.size() != 21 || name.substr(16) != ".json") continue;
+        const std::string id = name.substr(0, 16);
+        if (!downloads::isValidDownloadId(id) || state_.downloads.find(id) != nullptr) continue;
+        auto removed = context_.fs().removeFile(it->path());
+        if (!removed) logger().warn("check", "could not remove " + name + ": " + removed.error().describe());
+    }
 }
 
 void AppController::runSystemCheck() {
@@ -600,9 +634,114 @@ Status AppController::resumeDownload(const std::string& id) {
 }
 
 Status AppController::removeDownload(const std::string& id) {
+    if (state_.check.running && state_.check.downloadId == id) {
+        return makeError(ErrorCode::Busy, "This download is being checked. Cancel the check first.");
+    }
     auto removed = context_.downloads().remove(id);
+    if (removed) {
+        const auto report = mods::reportPath(context_.paths(), id);
+        std::error_code ec;
+        if (std::filesystem::exists(report, ec)) (void)context_.fs().removeFile(report);
+        if (state_.check.downloadId == id) state_.check = ModCheckView{};
+    }
     refreshDownloads();
     return removed;
+}
+
+// ---------------------------------------------------------------- checks (Phase 4)
+
+void AppController::checkDownload(const std::string& id, bool again) {
+    ModCheckView& view = state_.check;
+    if (view.running) {
+        if (view.downloadId != id) addNotice("Another mod is being checked. Wait for it to finish.", ToastKind::Warning);
+        return;
+    }
+    view = ModCheckView{};
+    view.downloadId = id;
+    const downloads::DownloadInfo* item = state_.downloads.find(id);
+    auto file = context_.downloads().completedFile(id);
+    if (item == nullptr || !file) {
+        view.error = item == nullptr ? makeError(ErrorCode::NotFound, "This download no longer exists.") : file.error();
+        return;
+    }
+    const downloads::DownloadRequest& download = item->record.request;
+    mods::ModCheckRequest request;
+    request.downloadId = id;
+    request.archive = file.value();
+    request.format = download.format;
+    request.mod = download.mod;
+    request.displayName = download.displayName;
+    request.modVersion = download.modVersion;
+    request.titleId = download.gameTitleId;
+    for (const auto& game : allGames_) {
+        if (game.titleId == download.gameTitleId) request.sourceType = game.sourceType;
+    }
+    request.archiveRoot = download.archiveRoot;
+    request.targetPrefix = download.targetPrefix;
+    request.catalogueStatus = statusFromLabel(download.compatibility);
+    request.catalogueInstallable = download.catalogueInstallable;
+    const bool interrupted = context_.interruptedOperation().has_value();
+
+    view.running = true;
+    checkCancel_ = CancellationToken{};
+    const CancellationToken cancel = checkCancel_;
+    auto alive = alive_;
+    // Progress from the worker is coalesced: only the latest value is posted.
+    struct Progress {
+        std::mutex mutex;
+        mods::CheckPhase phase = mods::CheckPhase::Inspecting;
+        double fraction = 0.0;
+        bool pending = false;
+    };
+    auto shared = std::make_shared<Progress>();
+    tasks_.submit([this, request, again, cancel, interrupted, alive, shared] {
+        Result<mods::ModCheckReport> result = makeError(ErrorCode::NotFound, "No stored result.");
+        if (!again) result = mods::loadReport(context_.paths(), request.downloadId);
+        if (!result) {
+            mods::ModCheckEnvironment env{context_.fs(), context_.paths(), context_.journal(), interrupted,
+                                          limits::kStorageSafetyReserveBytes, {}, {}};
+            result = mods::runModCheck(request, env, &cancel, [this, alive, shared](mods::CheckPhase phase, double fraction) {
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                shared->phase = phase;
+                shared->fraction = fraction;
+                if (shared->pending) return;
+                shared->pending = true;
+                mainQueue_.post([this, alive, shared] {
+                    if (!alive->load()) return;
+                    std::lock_guard<std::mutex> inner(shared->mutex);
+                    shared->pending = false;
+                    if (state_.check.running) {
+                        state_.check.phase = shared->phase;
+                        state_.check.progress = shared->fraction;
+                    }
+                });
+            });
+            if (result) {
+                auto saved = mods::saveReport(context_.fs(), context_.paths(), result.value());
+                if (!saved) logger().warn("check", "could not store the result: " + saved.error().describe());
+            }
+        }
+        if (result) mods::completeReport(result.value(), context_.paths());
+        mainQueue_.post([this, alive, id = request.downloadId, name = request.displayName,
+                         result = std::move(result)]() mutable {
+            if (!alive->load()) return;
+            ModCheckView& current = state_.check;
+            if (current.downloadId != id) return;
+            current.running = false;
+            if (!result) {
+                current.error = result.error();
+                if (result.error().code != ErrorCode::Cancelled) {
+                    addNotice("The check of " + name + " failed: " + result.error().message, ToastKind::Error);
+                }
+                return;
+            }
+            current.report = std::move(result).value();
+        });
+    });
+}
+
+void AppController::cancelCheck() {
+    if (state_.check.running) checkCancel_.cancel();
 }
 
 // ---------------------------------------------------------------- text entry

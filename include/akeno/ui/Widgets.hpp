@@ -2,6 +2,7 @@
 // Focus/scroll models and shared drawing helpers.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -83,6 +84,21 @@ void placeholderArt(ICanvas& canvas, const Rect& rect, std::string_view name);
 void progressBar(ICanvas& canvas, const Rect& rect, double fraction, Color color);
 // A panel with a coloured edge, a heading and a short explanation (empty and error states).
 void messagePanel(ICanvas& canvas, const Rect& rect, std::string_view heading, std::string_view body, Color accent);
+
+// A scrollable text document made of pre-wrapped lines (mod details, check reports).
+struct DocLine {
+    std::string text;
+    FontRole role = FontRole::Caption;
+    Color color = theme::kTextSecondary;
+    bool bold = false;
+    std::optional<Color> dot;  // a coloured marker before the first line of an item
+};
+inline constexpr int kDocLineHeight = 40;
+void addWrappedLines(ICanvas& canvas, std::vector<DocLine>& lines, std::string_view text, int width, FontRole role,
+                     Color color, bool bold = false, std::optional<Color> dot = std::nullopt);
+void addHeadingLine(std::vector<DocLine>& lines, std::string text);
+// Draws the lines starting at `scroll` (clamped; `maxScroll` is updated) with a scroll bar.
+void drawDocument(ICanvas& canvas, const std::vector<DocLine>& lines, const Rect& area, int& scroll, int& maxScroll);
 
 }  // namespace draw
 

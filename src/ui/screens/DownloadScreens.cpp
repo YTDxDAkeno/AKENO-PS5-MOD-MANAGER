@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "akeno/core/Strings.hpp"
+#include "akeno/mods/ModCheck.hpp"
 #include "akeno/ui/Screens.hpp"
 #include "akeno/ui/Theme.hpp"
 
@@ -77,7 +78,7 @@ std::string statusLine(const DownloadInfo& info) {
         case DownloadState::Verifying:
             return strings::concat("Checking the SHA-256 checksum, ", static_cast<int>(fraction(info) * 100), "%");
         case DownloadState::Completed:
-            return strings::concat(total, ", SHA-256 checked. Installing comes in a later version.");
+            return strings::concat(total, ", SHA-256 checked. Press X to check what is inside.");
         case DownloadState::Failed: return record.error.empty() ? std::string("Failed.") : record.error;
     }
     return {};
@@ -125,8 +126,7 @@ NavRequest DownloadsScreen::handle(Action action, UiEnv& env) {
                     if (result) env.showToast("Continuing " + item.record.request.displayName);
                     break;
                 case DownloadState::Completed:
-                    env.showToast("Downloaded and checked. Installing comes in a later version.");
-                    break;
+                    return NavRequest::push(std::make_unique<ModCheckScreen>(id));
             }
             if (!result) env.showToast(result.error().message, ToastKind::Error);
             break;
@@ -157,7 +157,7 @@ std::vector<ButtonHint> DownloadsScreen::hints(const UiEnv& env) const {
         case DownloadState::Verifying: hints.push_back({ButtonHint::Button::Cross, "Pause"}); break;
         case DownloadState::Paused: hints.push_back({ButtonHint::Button::Cross, "Resume"}); break;
         case DownloadState::Failed: hints.push_back({ButtonHint::Button::Cross, "Try again"}); break;
-        case DownloadState::Completed: break;
+        case DownloadState::Completed: hints.push_back({ButtonHint::Button::Cross, "Check contents"}); break;
     }
     return hints;
 }
@@ -233,6 +233,196 @@ void DownloadsScreen::render(ICanvas& canvas, UiEnv& env) {
         canvas.drawText(strings::concat(list_.focus() + 1, " of ", list_.count()), {content.x, content.y + 40, content.w, 36},
                         TextStyle{FontRole::Small, theme::kTextSecondary, TextAlign::Right, false});
     }
+}
+
+// ---------------------------------------------------------------- ModCheckScreen
+
+namespace {
+
+Color findingColor(mods::FindingLevel level) {
+    switch (level) {
+        case mods::FindingLevel::Info: return theme::kNeutral;
+        case mods::FindingLevel::Warning: return theme::kWarning;
+        case mods::FindingLevel::Blocker: return theme::kError;
+    }
+    return theme::kNeutral;
+}
+
+std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCheckReport& report, int width) {
+    using draw::addHeadingLine;
+    using draw::addWrappedLines;
+    std::vector<draw::DocLine> lines;
+    const mods::ModAnalysis& a = report.analysis;
+
+    addHeadingLine(lines, "Findings");
+    if (a.findings.empty()) {
+        addWrappedLines(canvas, lines, "Nothing unusual: only game data, no programs or scripts.", width,
+                        FontRole::Caption, theme::kTextPrimary, false, theme::kOk);
+    }
+    for (const auto& finding : a.findings) {
+        std::string text = finding.message;
+        if (!finding.path.empty()) text += "  (" + finding.path + ")";
+        addWrappedLines(canvas, lines, text, width, FontRole::Caption,
+                        finding.level == mods::FindingLevel::Info ? theme::kTextSecondary : theme::kTextPrimary, false,
+                        findingColor(finding.level));
+    }
+
+    addHeadingLine(lines, "Conflicts with other checked mods of this game");
+    if (report.conflicts.empty()) {
+        addWrappedLines(canvas, lines, "None. No other checked mod writes the same files.", width, FontRole::Caption,
+                        theme::kTextSecondary);
+    }
+    for (const auto& conflict : report.conflicts) {
+        addWrappedLines(canvas, lines,
+                        strings::concat(conflict.otherName, ": ", conflict.count,
+                                        conflict.count == 1 ? " file in common" : " files in common"),
+                        width, FontRole::Caption, theme::kTextPrimary, false, theme::kWarning);
+        for (const auto& path : conflict.paths) {
+            addWrappedLines(canvas, lines, "    " + path, width, FontRole::Small, theme::kTextSecondary);
+        }
+    }
+
+    addHeadingLine(lines, "Install plan (dry run: nothing is changed)");
+    if (!report.plan) {
+        addWrappedLines(canvas, lines, "This download is not linked to an installed game, so there is no plan.", width,
+                        FontRole::Caption, theme::kTextSecondary);
+    } else {
+        int number = 1;
+        for (const auto& step : report.plan->steps) {
+            addWrappedLines(canvas, lines, strings::concat(number++, ". ", step.title), width, FontRole::Caption,
+                            theme::kTextPrimary, true);
+            addWrappedLines(canvas, lines, step.detail, width, FontRole::Small, theme::kTextSecondary);
+        }
+        addWrappedLines(canvas, lines, "Not carried out: " + report.plan->notExecutableReason, width, FontRole::Caption,
+                        theme::kWarning);
+    }
+
+    addHeadingLine(lines, strings::concat("Files (", a.files.size(), ")"));
+    std::size_t shown = 0;
+    for (const auto& file : a.files) {
+        if (shown++ == 150) {
+            addWrappedLines(canvas, lines, strings::concat("... and ", a.files.size() - 150, " more"), width,
+                            FontRole::Small, theme::kTextSecondary);
+            break;
+        }
+        std::string text = file.archivePath + "  " + strings::formatBytes(file.size) + "  " + std::string(toString(file.kind));
+        text += file.installPath.empty() ? std::string("  (not installed)") : "  -> " + file.installPath;
+        const bool code = file.kind == mods::FileKind::WindowsCode || file.kind == mods::FileKind::NativeCode;
+        addWrappedLines(canvas, lines, text, width, FontRole::Small, code ? theme::kError : theme::kTextSecondary);
+    }
+    return lines;
+}
+
+}  // namespace
+
+void ModCheckScreen::update(UiEnv& env) {
+    if (!requested_) {
+        requested_ = true;
+        env.commands.checkDownload(downloadId_, false);
+    }
+}
+
+NavRequest ModCheckScreen::handle(Action action, UiEnv& env) {
+    const ModCheckView& view = env.state.check;
+    const bool mine = view.downloadId == downloadId_;
+    switch (action) {
+        case Action::Back:
+            if (mine && view.running) {
+                env.commands.cancelCheck();
+                env.showToast("Cancelling the check...");
+                return NavRequest::none();
+            }
+            return NavRequest::pop();
+        case Action::Secondary:
+            if (!(mine && view.running)) {
+                scroll_ = 0;
+                env.commands.checkDownload(downloadId_, true);
+            }
+            break;
+        case Action::PageDown:
+        case Action::Down:
+            scroll_ = std::min(maxScroll_, scroll_ + (action == Action::PageDown ? 8 : 1));
+            break;
+        case Action::PageUp:
+        case Action::Up:
+            scroll_ = std::max(0, scroll_ - (action == Action::PageUp ? 8 : 1));
+            break;
+        default:
+            break;
+    }
+    return NavRequest::none();
+}
+
+std::vector<ButtonHint> ModCheckScreen::hints(const UiEnv& env) const {
+    const ModCheckView& view = env.state.check;
+    if (view.downloadId == downloadId_ && view.running) return {{ButtonHint::Button::Circle, "Cancel"}};
+    return {{ButtonHint::Button::L2R2, "Scroll"}, {ButtonHint::Button::Triangle, "Check again"},
+            {ButtonHint::Button::Circle, "Back"}};
+}
+
+void ModCheckScreen::render(ICanvas& canvas, UiEnv& env) {
+    const Rect content = theme::kContent;
+    const ModCheckView& view = env.state.check;
+    const DownloadInfo* item = env.state.downloads.find(downloadId_);
+    std::string name = item != nullptr ? item->record.request.displayName + "  v" + item->record.request.modVersion
+                                       : std::string("Download");
+    canvas.drawText("Check: " + name, {content.x, content.y, content.w - 400, 60},
+                    TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+    if (view.downloadId != downloadId_) {
+        if (view.running) {
+            draw::messagePanel(canvas, {content.x, content.y + 90, content.w, 260}, "Another check is running",
+                               "Wait until it has finished, then open this one again.", theme::kNeutral);
+        }
+        return;
+    }
+    if (view.running) {
+        const Rect box{content.x, content.y + 100, content.w, 300};
+        draw::panel(canvas, box);
+        canvas.drawText(mods::describe(view.phase), {box.x + 50, box.y + 40, box.w - 100, 56},
+                        TextStyle{FontRole::Heading, theme::kTextPrimary, TextAlign::Left, true});
+        draw::progressBar(canvas, {box.x + 50, box.y + 130, box.w - 100, 18}, view.progress, theme::kAccent);
+        draw::spinner(canvas, box.right() - 80, box.y + 68, env.time);
+        drawWrappedText(canvas,
+                        "The archive is unpacked into Akeno's staging folder, never into a game. The staging folder is "
+                        "deleted when the check is done.",
+                        {box.x + 50, box.y + 180, box.w - 100, 100},
+                        TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 40, 2);
+        return;
+    }
+    if (view.error) {
+        const bool cancelled = view.error->code == ErrorCode::Cancelled;
+        draw::messagePanel(canvas, {content.x, content.y + 90, content.w, 300},
+                           cancelled ? "The check was cancelled" : "The check failed",
+                           view.error->message + " Press TRIANGLE to check again.",
+                           cancelled ? theme::kNeutral : theme::kError);
+        return;
+    }
+    if (!view.report) return;
+    const mods::ModCheckReport& report = *view.report;
+    const mods::ModAnalysis& a = report.analysis;
+
+    int x = content.x;
+    const int badgeY = content.y + 70;
+    x += draw::badge(canvas, x, badgeY, theme::badgeLabel(a.status), theme::badgeColor(a.status)) + 16;
+    if (a.hasBlockers()) {
+        draw::badge(canvas, x, badgeY, "BLOCKED", theme::kError);
+    } else if (a.installable) {
+        draw::badge(canvas, x, badgeY, "NO PROBLEMS FOUND", theme::kOk);
+    } else {
+        draw::badge(canvas, x, badgeY, "NOT INSTALLABLE", theme::kWarning);
+    }
+    std::string summary = strings::concat(a.installCount, a.installCount == 1 ? " file" : " files", " to install (",
+                                          strings::formatBytes(a.installBytes), ") from ", report.archiveFiles,
+                                          " in the archive");
+    if (!a.engineHint.empty()) summary += "   " + a.engineHint;
+    canvas.drawText(summary, {content.x, content.y + 120, content.w, 40},
+                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false});
+    canvas.drawText("Checked " + report.checkedAt.substr(0, 10) + "   " + report.titleId,
+                    {content.x + content.w - 600, content.y, 600, 60},
+                    TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Right, false});
+
+    const Rect doc{content.x, content.y + 175, content.w, content.h - 175};
+    draw::drawDocument(canvas, buildCheckDocument(canvas, report, doc.w - 30), doc, scroll_, maxScroll_);
 }
 
 // ---------------------------------------------------------------- ConfirmScreen

@@ -12,7 +12,7 @@ Result<LoadedDownloads> DownloadStore::loadAll() {
     auto stmt = db_.prepare(
         "SELECT id, provider_id, mod_id, name, mod_version, game_title_id, game_version, compatibility, url, "
         "expected_size, expected_sha256, format, state, bytes_done, attempts, error, created_at, updated_at, "
-        "completed_at FROM downloads ORDER BY created_at, rowid;");
+        "completed_at, archive_root, target_prefix, catalogue_installable FROM downloads ORDER BY created_at, rowid;");
     if (!stmt) {
         return std::move(stmt).error();
     }
@@ -46,6 +46,9 @@ Result<LoadedDownloads> DownloadStore::loadAll() {
         record.createdAt = stmt->columnText(16);
         record.updatedAt = stmt->columnText(17);
         record.completedAt = stmt->columnText(18);
+        request.archiveRoot = stmt->columnText(19);
+        request.targetPrefix = stmt->columnText(20);
+        request.catalogueInstallable = stmt->columnInt64(21) != 0;
 
         auto valid = validateRequest(request);
         if (!isValidDownloadId(record.id) || !state || !valid) {
@@ -66,7 +69,8 @@ Status DownloadStore::save(const DownloadRecord& record) {
     auto stmt = db_.prepare(
         "INSERT OR REPLACE INTO downloads(id, provider_id, mod_id, name, mod_version, game_title_id, game_version, "
         "compatibility, url, expected_size, expected_sha256, format, state, bytes_done, attempts, error, created_at, "
-        "updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+        "updated_at, completed_at, archive_root, target_prefix, catalogue_installable) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
     if (!stmt) {
         return std::move(stmt).error();
     }
@@ -91,6 +95,9 @@ Status DownloadStore::save(const DownloadRecord& record) {
     AKENO_TRY(stmt->bind(i++, std::string_view(record.createdAt)));
     AKENO_TRY(stmt->bind(i++, std::string_view(record.updatedAt)));
     AKENO_TRY(stmt->bind(i++, std::string_view(record.completedAt)));
+    AKENO_TRY(stmt->bind(i++, std::string_view(request.archiveRoot)));
+    AKENO_TRY(stmt->bind(i++, std::string_view(request.targetPrefix)));
+    AKENO_TRY(stmt->bind(i++, static_cast<std::int64_t>(request.catalogueInstallable ? 1 : 0)));
     auto done = stmt->step();
     if (!done) {
         return std::move(done).error();

@@ -132,7 +132,7 @@ public:
 
 private:
     Status open(bool append) {
-        auto opened = fs_.openForWriting(path_, append);
+        auto opened = fs_.openForWriting(path_, append ? security::WriteMode::Append : security::WriteMode::Truncate);
         if (!opened) {
             failure_ = SinkFailure{false, false};
             return std::move(opened).error();

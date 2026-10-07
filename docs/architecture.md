@@ -143,12 +143,35 @@ uses. `ShadowMountGameProvider` implements it on top of `ShadowMountClient`:
 changes, so later phases can warn that installed mods were checked against
 another version.
 
+## Mod check (Phase 4)
+
+```
+completed download → inspect headers (pass 1) → free space → journal begin
+  → extract into staging/check-<id>-<time>/ (pass 2) → lstat re-scan
+  → analyse → delete staging → journal complete → cache/analysis/<id>.json
+  → (when shown) conflicts with other checked mods of the game + dry-run plan
+```
+
+* `archives::SecureExtractor` enables only the libarchive reader of the
+  declared format (zip, tar, tar.gz, 7z). Pass 1 reads headers and refuses
+  the whole archive on the first unsafe entry; pass 2 must see exactly the
+  same entries. Files are created with `O_EXCL` and written through
+  `SafeFs`; sizes are counted, never trusted; permissions, owners and times
+  from the archive are ignored. On any failure the staging folder is
+  removed.
+* `mods::analyzeMod` classifies files by magic bytes first (PE, ELF, SELF,
+  `#!`), then by name, maps `archiveRoot`/`targetPrefix` to install paths and
+  reports findings (blocker, warning, info). Analysis can make a label
+  worse, never better.
+* `mods::planInstall` describes the Phase 5 steps. Nothing executes it.
+* The check refuses to start while an interrupted operation is unresolved, so
+  the recovery journal is never overwritten.
+
 ## Mod pipeline (later phases)
 
 ```
 DOWNLOAD → VERIFY (size, SHA-256)   [Phase 3, implemented]
-  → ARCHIVE SECURITY SCAN → EXTRACT TO STAGING
-  → COMPATIBILITY ANALYSIS → CONFLICT ANALYSIS → INSTALL PLAN → DRY RUN
+  → ARCHIVE SECURITY SCAN → EXTRACT TO STAGING → ANALYSIS → DRY RUN   [Phase 4, implemented]
   → BUILD overlay.next → VALIDATE → ATOMIC ACTIVATE (journaled renames)
 ```
 
@@ -201,7 +224,7 @@ See `docs/shadowmount.md` for the overlay contract and
 | 1 | App start, controller, ShadowMount connection, games, icons, versions, settings, logging | implemented; compiled and unit tested; **not hardware tested** |
 | 2 | Akeno catalogue, HTTPS, metadata, screenshots, search, badges | implemented; compiled, unit and mock tested; **not hardware tested** |
 | 3 | Downloads, pause/resume, SHA-256, storage checks | implemented; compiled, unit and mock tested; **not hardware tested** |
-| 4 | Secure extraction, analysis, conflict prediction, dry run | not started |
+| 4 | Secure extraction, analysis, conflict prediction, dry run | implemented; compiled, unit and mock tested; **not hardware tested** |
 | 5 | Overlay generation and activation, rollback, vanilla | not started |
 | 6 | Load order, profiles, dependencies | not started |
 | 7 | Nexus, mod.io | not started |

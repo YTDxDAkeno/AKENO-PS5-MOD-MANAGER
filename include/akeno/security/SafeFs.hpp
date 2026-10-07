@@ -14,7 +14,13 @@
 
 namespace akeno::security {
 
-// A file opened for writing through SafeFs (downloads). Closed on destruction.
+enum class WriteMode {
+    Truncate,   // create or empty an existing file
+    Append,     // create or continue an existing file
+    CreateNew,  // the file must not exist yet
+};
+
+// A file opened for writing through SafeFs (downloads, extraction). Closed on destruction.
 class WritableFile {
 public:
     ~WritableFile();
@@ -23,7 +29,8 @@ public:
 
     Status write(std::string_view data);
     Status sync();    // fsync
-    Status close();   // fsync and close; further writes fail
+    // Closes the file; with `flush` (the default) it is synced first. Further writes fail.
+    Status close(bool flush = true);
     std::uint64_t size() const noexcept { return size_; }
     const std::filesystem::path& path() const noexcept { return path_; }
 
@@ -49,9 +56,8 @@ public:
 
     Status removeFile(const std::filesystem::path& target) const;
 
-    // Opens a regular file for writing without following symlinks. `append` keeps the existing
-    // content (resuming); otherwise the file is truncated. Creates the file if needed.
-    Result<std::unique_ptr<WritableFile>> openForWriting(const std::filesystem::path& target, bool append) const;
+    // Opens a regular file for writing without following symlinks; never a hard-linked file.
+    Result<std::unique_ptr<WritableFile>> openForWriting(const std::filesystem::path& target, WriteMode mode) const;
 
     // Removes a directory tree without following symlinks. Refuses to remove an allowed root.
     Status removeTree(const std::filesystem::path& target) const;

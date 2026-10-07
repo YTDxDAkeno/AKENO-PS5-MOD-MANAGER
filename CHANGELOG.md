@@ -7,8 +7,9 @@ anything.
 ## [0.1.0-alpha] - unreleased
 
 First development release: **Phase 0 (research), Phase 1 (safe game browser),
-Phase 2 (online mod browser) and Phase 3 (download engine)**. Compiled and unit
-tested on a Linux host. **Not tested on PS5 hardware.**
+Phase 2 (online mod browser), Phase 3 (download engine) and Phase 4 (mod check:
+secure extraction, analysis, dry run)**. Compiled and unit tested on a Linux host.
+**Not tested on PS5 hardware.**
 
 ### Added
 - Research notes on ShadowMountPlus 1.7, the PS5 payload SDK, pacbrew libraries,
@@ -59,6 +60,26 @@ tested on a Linux host. **Not tested on PS5 hardware.**
   INCOMPATIBLE, confirmation for EXPERIMENTAL); confirmation dialog.
 - `--download-test` and a download step in `AkenoSelfCheck.elf` (ladder steps
   5 and 6) with a deterministic harmless test file.
+- Secure extraction (libarchive; zip, tar, tar.gz, 7z readers only): two passes,
+  the whole archive is refused for absolute paths, `..`, backslashes, colons,
+  control or non-UTF-8 names, duplicates, file/folder clashes, symlinks, hard
+  links, devices, FIFOs, sockets, encryption, and size, count, depth and
+  compression-ratio limits; files are created with `O_EXCL` in a fresh staging
+  folder, sizes are counted rather than trusted, archive permissions are
+  ignored, and the tree is re-scanned with `lstat` afterwards.
+- Mod analyser: file types from magic bytes and names; Windows code and UE4SS
+  make a mod PC ONLY, console code, `fakelib`, `sce_sys` and `sce_module` make it
+  INCOMPATIBLE; scripts, nested archives, case clashes and the 256-redirect
+  limit of installed packages are reported; analysis never improves a label.
+- Conflict prediction between checked mods of the same game; dry-run install
+  plan describing the overlay steps of Phase 5 (never carried out).
+- Mod check pipeline: journaled staging folder deleted afterwards, free-space
+  reserve, cancellation; reports kept in `cache/analysis/` and validated when
+  read. Check screen in the Downloads tab.
+- `--download-test` and `AkenoSelfCheck.elf` also unpack, analyse and plan the
+  test archive (ladder steps 7 to 9).
+- Database migration 3 stores each download's install layout.
+- `SafeFs::openForWriting` gained an exclusive-create mode.
 - `AkenoSelfCheck.elf`: headless system check payload for first hardware tests.
 - PS5 packaging: `AkenoModManager.elf`, websrv homebrew folder zip, `SHA256SUMS`.
 - Developer tools: mock ShadowMountPlus API server, `--ui-script` automation,

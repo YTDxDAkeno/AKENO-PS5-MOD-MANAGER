@@ -74,6 +74,8 @@ public:
     std::vector<std::string> paused;
     std::vector<std::string> resumed;
     std::vector<std::string> removed;
+    std::vector<std::pair<std::string, bool>> checks;  // id, again
+    int checkCancels = 0;
     std::string textPrompt;
     std::string textInitial;
     std::function<void(std::optional<std::string>)> textDone;
@@ -142,6 +144,13 @@ public:
                     items.end());
         return {};
     }
+    void checkDownload(const std::string& id, bool again) override {
+        checks.emplace_back(id, again);
+        state_.check = ui::ModCheckView{};
+        state_.check.downloadId = id;
+        state_.check.running = true;
+    }
+    void cancelCheck() override { ++checkCancels; }
     void requestTextInput(const std::string& prompt, const std::string& initial,
                           std::function<void(std::optional<std::string>)> done) override {
         textPrompt = prompt;

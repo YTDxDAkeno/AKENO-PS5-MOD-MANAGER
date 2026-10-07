@@ -3,6 +3,7 @@
 
 #include "TestSupport.hpp"
 #include "UiTestSupport.hpp"
+#include "akeno/mods/ModCheck.hpp"
 #include "akeno/ui/Screens.hpp"
 #include "akeno/ui/UiScript.hpp"
 
@@ -469,7 +470,7 @@ TEST_CASE("the Downloads tab shows progress and controls each download") {
     CHECK(canvas.hasText("250 B of 1.0 KB   100 B/s   about 8 s left"));
     CHECK(canvas.hasText("DOWNLOADING"));
     CHECK(canvas.hasText("DOWNLOADED"));
-    CHECK(canvas.hasText("SHA-256 checked. Installing comes in a later version."));
+    CHECK(canvas.hasText("SHA-256 checked. Press X to check what is inside."));
     // Newest first: the active one is focused.
     host.handle(Action::Confirm, h.env);
     REQUIRE(h.commands.paused.size() == 1);
@@ -498,6 +499,99 @@ TEST_CASE("the Downloads tab shows progress and controls each download") {
     REQUIRE(h.commands.removed.size() == 1);
     CHECK(h.commands.removed[0] == "bbbbbbbbbbbbbbbb");
     CHECK(h.state.downloads.items.size() == 1);
+}
+
+namespace {
+
+mods::ModCheckReport sampleReport(bool blocked) {
+    mods::ModCheckReport report;
+    report.downloadId = "aaaaaaaaaaaaaaaa";
+    report.displayName = "Crimson Outfit Recolour";
+    report.modVersion = "1.2.0";
+    report.titleId = "PPSA90001";
+    report.checkedAt = "2026-10-07T12:00:00Z";
+    report.archiveFiles = 3;
+    mods::AnalysisInput input;
+    input.titleId = "PPSA90001";
+    input.catalogueStatus = CompatibilityStatus::Verified;
+    input.catalogueInstallable = true;
+    archives::ExtractedFile pak;
+    pak.path = "Content/Paks/~mods/crimson.pak";
+    pak.size = 4000;
+    pak.head = "PAK";
+    input.files.push_back(pak);
+    if (blocked) {
+        archives::ExtractedFile dll;
+        dll.path = "Binaries/dwmapi.dll";
+        dll.size = 100;
+        dll.head = "MZ";
+        input.files.push_back(dll);
+    }
+    report.analysis = mods::analyzeMod(input);
+    report.plan = mods::planInstall(report.analysis, AppPaths{"/data/akeno-mod-manager"}, "PPSA90001", "aaaaaaaaaaaaaaaa");
+    report.conflicts = {{"bbbbbbbbbbbbbbbb", "Another Outfit", {"Content/Paks/~mods/crimson.pak"}, 1}};
+    return report;
+}
+
+}  // namespace
+
+TEST_CASE("completed downloads open their check, which shows findings, conflicts and the plan") {
+    test::UiHarness h;
+    auto d = details(true);
+    h.state.downloads.items = {downloadOf(d, downloads::DownloadState::Completed, 1000, "aaaaaaaaaaaaaaaa")};
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    host.handle(Action::Confirm, h.env);
+    auto* screen = dynamic_cast<ModCheckScreen*>(host.top());
+    REQUIRE(screen != nullptr);
+
+    test::RecordingCanvas canvas;
+    host.render(canvas, h.env);  // starts the check
+    REQUIRE(h.commands.checks.size() == 1);
+    CHECK(h.commands.checks[0] == std::make_pair(std::string("aaaaaaaaaaaaaaaa"), false));
+    CHECK(canvas.hasText("Reading the archive"));
+    CHECK(canvas.hasText("staging folder"));
+    host.handle(Action::Back, h.env);  // cancels instead of leaving
+    CHECK(h.commands.checkCancels == 1);
+    CHECK(host.tabDepth(Tab::Downloads) == 2);
+
+    h.state.check.running = false;
+    h.state.check.report = sampleReport(false);
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(h.commands.checks.size() == 1);
+    CHECK(canvas.hasText("NO PROBLEMS FOUND"));
+    CHECK(canvas.hasText("VERIFIED"));
+    CHECK(canvas.hasText("1 file to install (4.0 KB) from 3 in the archive"));
+    CHECK(canvas.hasText("Another Outfit: 1 file in common"));
+    CHECK(canvas.hasText("Install plan (dry run: nothing is changed)"));
+    for (int i = 0; i < 2; ++i) host.handle(Action::PageDown, h.env);
+    CHECK(screen->scroll() > 0);
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("Not carried out: Installing is not implemented in this version (Phase 5)."));
+    CHECK(canvas.hasText("Content/Paks/~mods/crimson.pak"));
+
+    host.handle(Action::Secondary, h.env);  // check again
+    REQUIRE(h.commands.checks.size() == 2);
+    CHECK(h.commands.checks[1].second);
+
+    h.state.check.running = false;
+    h.state.check.report = sampleReport(true);
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("BLOCKED"));
+    CHECK(canvas.hasText("PC ONLY"));
+    CHECK(canvas.hasText("Contains Windows programs or libraries (1 files). This is a PC mod. (Binaries/dwmapi.dll)"));
+
+    h.state.check.report.reset();
+    h.state.check.error = makeError(ErrorCode::SafetyViolation, "The archive was refused: it contains a symbolic link.");
+    canvas.clear();
+    host.render(canvas, h.env);
+    CHECK(canvas.hasText("The check failed"));
+    host.handle(Action::Back, h.env);
+    CHECK(host.tabDepth(Tab::Downloads) == 1);
 }
 
 TEST_CASE("an empty Downloads tab explains itself, and notices become toasts") {

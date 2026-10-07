@@ -415,29 +415,14 @@ namespace {
 enum class ModAction { Install, Screenshots, Back };
 constexpr std::array<ModAction, 3> kModActions{ModAction::Install, ModAction::Screenshots, ModAction::Back};
 
-struct DocLine {
-    std::string text;
-    FontRole role = FontRole::Caption;
-    Color color = theme::kTextSecondary;
-    bool bold = false;
-    std::optional<Color> dot;  // check mark colour
-};
-
-constexpr int kDocLineHeight = 40;
+using draw::DocLine;
 
 void addWrapped(ICanvas& canvas, std::vector<DocLine>& lines, std::string_view text, int width, FontRole role,
                 Color color, bool bold = false, std::optional<Color> dot = std::nullopt) {
-    bool first = true;
-    for (auto& line : wrapText(canvas, text, width - (dot ? 40 : 0), role, bold)) {
-        lines.push_back(DocLine{std::move(line), role, color, bold, first ? dot : std::nullopt});
-        first = false;
-    }
+    draw::addWrappedLines(canvas, lines, text, width, role, color, bold, dot);
 }
 
-void addHeading(std::vector<DocLine>& lines, std::string text) {
-    if (!lines.empty()) lines.push_back(DocLine{});
-    lines.push_back(DocLine{std::move(text), FontRole::Body, theme::kTextPrimary, true, std::nullopt});
-}
+void addHeading(std::vector<DocLine>& lines, std::string text) { draw::addHeadingLine(lines, std::move(text)); }
 
 std::vector<DocLine> buildDocument(ICanvas& canvas, const providers::ModDetails& d, int width) {
     std::vector<DocLine> lines;
@@ -699,29 +684,7 @@ void ModDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     if (view.loading) draw::spinner(canvas, content.right() - 30, content.y + 30, env.time);
 
     const Rect doc{infoX, content.y + 124, infoW, content.h - 124};
-    const auto lines = buildDocument(canvas, *d, doc.w - 30);
-    const int visible = doc.h / kDocLineHeight;
-    maxScroll_ = std::max(0, static_cast<int>(lines.size()) - visible);
-    scroll_ = std::clamp(scroll_, 0, maxScroll_);
-    for (int i = 0; i < visible && scroll_ + i < static_cast<int>(lines.size()); ++i) {
-        const DocLine& line = lines[static_cast<std::size_t>(scroll_ + i)];
-        const int y = doc.y + i * kDocLineHeight;
-        int x = doc.x;
-        if (line.dot) {
-            canvas.fillCircle(x + 12, y + kDocLineHeight / 2, 10, *line.dot);
-            x += 40;
-        }
-        canvas.drawText(line.text, {x, y, doc.right() - x - 30, kDocLineHeight},
-                        TextStyle{line.role, line.color, TextAlign::Left, line.bold});
-    }
-    if (maxScroll_ > 0) {
-        // Scroll bar.
-        const Rect track{doc.right() - 10, doc.y, 8, visible * kDocLineHeight};
-        canvas.fillRoundedRect(track, 4, theme::kPanelRaised);
-        const int thumbH = std::max(40, track.h * visible / static_cast<int>(lines.size()));
-        const int thumbY = track.y + (track.h - thumbH) * scroll_ / maxScroll_;
-        canvas.fillRoundedRect({track.x, thumbY, track.w, thumbH}, 4, theme::kAccent);
-    }
+    draw::drawDocument(canvas, buildDocument(canvas, *d, doc.w - 30), doc, scroll_, maxScroll_);
 }
 
 // ---------------------------------------------------------------- ScreenshotViewerScreen

@@ -7,6 +7,7 @@
 
 #include "akeno/core/Strings.hpp"
 #include "akeno/downloads/DownloadManager.hpp"
+#include "akeno/mods/ModCheck.hpp"
 
 namespace akeno::app {
 
@@ -70,6 +71,48 @@ int runListGames(AppContext& context) {
     return 0;
 }
 
+namespace {
+
+// Ladder steps 7 to 9: unpack the test archive into staging, delete staging, describe the plan.
+std::string checkTestArchive(AppContext& context, const std::string& downloadId, const std::filesystem::path& archive,
+                             bool& passed) {
+    mods::ModCheckRequest request;
+    request.downloadId = downloadId;
+    request.archive = archive;
+    request.format = mods::ArchiveFormat::Zip;
+    request.mod = {"akeno-self-test", "download-test"};
+    request.displayName = "Akeno download test";
+    request.modVersion = "1";
+    request.titleId = "TEST00000";
+    mods::ModCheckEnvironment env{context.fs(), context.paths(), context.journal(),
+                                  context.interruptedOperation().has_value(), limits::kStorageSafetyReserveBytes, {}, {}};
+    auto report = mods::runModCheck(request, env);
+    if (!report) {
+        passed = false;
+        return "Check:    FAILED - " + report.error().message;
+    }
+    std::error_code ec;
+    const bool stagingEmpty = std::filesystem::is_empty(context.paths().staging(), ec) && !ec;
+    mods::completeReport(report.value(), context.paths());
+    const auto& a = report->analysis;
+    std::string text = strings::concat("Check:    PASSED - ", report->archiveFiles, " file(s) unpacked into ",
+                                       context.paths().staging().string(), "\n");
+    text += strings::concat("Staging:  ", stagingEmpty ? "deleted again" : "NOT EMPTY", "\n");
+    text += strings::concat("Analysis: ", a.installCount, " file(s) to install, ", a.findings.size(), " finding(s)\n");
+    for (const auto& file : a.files) {
+        text += strings::concat("          ", file.archivePath, " (", mods::toString(file.kind), ", ",
+                                file.size, " bytes, SHA-256 ", file.sha256.substr(0, 16), "...)\n");
+    }
+    if (report->plan) {
+        text += strings::concat("Plan:     ", report->plan->steps.size(), " steps, not carried out (dry run)\n");
+        for (const auto& [from, to] : report->plan->mapping) text += "          " + from + " -> " + to + "\n";
+    }
+    if (!stagingEmpty) passed = false;
+    return text;
+}
+
+}  // namespace
+
 DownloadTestSpec builtinDownloadTest() {
     return DownloadTestSpec{
         "https://raw.githubusercontent.com/YTDxDAkeno/AKENO-PS5-MOD-MANAGER/main/assets/test/download-test.zip",
@@ -131,6 +174,9 @@ int runDownloadTest(AppContext& context, const DownloadTestSpec& spec) {
                                           " bytes, SHA-256 matches (", static_cast<int>(seconds * 1000), " ms)\n",
                                           "Stored:   ", file->string())
                         : "Result:   FAILED - " + file.error().message;
+        if (passed) {
+            result += "\n\n" + checkTestArchive(context, queued->id, file.value(), passed);
+        }
     } else if (info->record.state == downloads::DownloadState::Failed) {
         result = "Result:   FAILED - " + info->record.error;
     } else {

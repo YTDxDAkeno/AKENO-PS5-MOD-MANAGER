@@ -9,6 +9,8 @@
 
 #include "LocalHttpServer.hpp"
 #include "TestSupport.hpp"
+#include "akeno/mods/ModCheck.hpp"
+#include "akeno/security/Sha256.hpp"
 #include "akeno/ui/AppController.hpp"
 
 using namespace akeno;
@@ -48,6 +50,14 @@ test::CannedResponse serve(const test::ReceivedRequest& request) {
         const std::string path = request.target.substr(prefix.size());
         if (path.find("..") == std::string::npos && std::filesystem::is_regular_file(test::fixturePath("catalog/" + path))) {
             response.body = test::readFixture("catalog/" + path);
+            return response;
+        }
+    } else if (request.target.rfind("/files/", 0) == 0) {
+        const std::string name = request.target.substr(7);
+        if (name.find("..") == std::string::npos &&
+            std::filesystem::is_regular_file(test::fixturePath("catalog/files/" + name))) {
+            response.contentType = "application/zip";
+            response.body = test::readFixture("catalog/files/" + name);
             return response;
         }
     } else if (request.target == "/img/ok.png") {
@@ -282,4 +292,61 @@ TEST_CASE("download requests are built from the catalogue and checked against th
 
     REQUIRE(f.controller->removeDownload(items[0].record.id).ok());
     CHECK(f.state().downloads.items.size() == 1);
+}
+
+TEST_CASE("a completed download is checked in staging and the result is kept") {
+    ControllerFixture f;
+    const std::string name = "example-blade-crimson-outfit-1.2.0.zip";
+    const std::string archive = test::readFixture("catalog/files/" + name);
+    downloads::DownloadRequest request;
+    request.mod = {"akeno-catalogue", "example-blade/crimson-outfit"};
+    request.displayName = "Crimson Outfit Recolour";
+    request.modVersion = "1.2.0";
+    request.gameTitleId = "PPSA90001";
+    request.compatibility = "VERIFIED";
+    request.catalogueInstallable = true;
+    request.url = f.base + "/files/" + name;
+    request.expectedSize = archive.size();
+    request.expectedSha256 = security::sha256Hex(archive);
+    request.format = mods::ArchiveFormat::Zip;
+    auto manifest = test::readFixture("catalog/mods/example-blade/crimson-outfit.json");
+    auto parsed = mods::parseModManifest(manifest, "crimson-outfit");
+    REQUIRE(parsed.ok());
+    request.archiveRoot = parsed->archiveRoot;
+    request.targetPrefix = parsed->targetPrefix;
+
+    auto& manager = f.context->downloads();
+    REQUIRE(manager.start().ok());
+    auto queued = manager.enqueue(request);
+    REQUIRE(queued.ok());
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (manager.find(queued->id)->record.state != downloads::DownloadState::Completed &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    REQUIRE(manager.find(queued->id)->record.state == downloads::DownloadState::Completed);
+
+    f.controller->start();  // refreshes the download list (and runs the system check)
+    REQUIRE(pumpUntil(f.queue, [&] { return f.state().downloads.find(queued->id) != nullptr; }));
+    f.controller->checkDownload(queued->id, false);
+    CHECK(f.state().check.running);
+    REQUIRE(pumpUntil(f.queue, [&] { return !f.state().check.running; }));
+    REQUIRE(f.state().check.report.has_value());
+    const auto& report = *f.state().check.report;
+    CHECK(report.analysis.installable);
+    CHECK(report.analysis.installCount > 0);
+    REQUIRE(report.plan.has_value());
+    CHECK_FALSE(report.plan->changesGameFiles);
+    CHECK(std::filesystem::exists(mods::reportPath(f.context->paths(), queued->id)));
+    CHECK(std::filesystem::is_empty(f.context->paths().staging()));
+    CHECK_FALSE(std::filesystem::exists(f.context->paths().operationJournal()));
+
+    // The stored result is shown the next time without unpacking again.
+    f.controller->checkDownload(queued->id, false);
+    REQUIRE(pumpUntil(f.queue, [&] { return !f.state().check.running; }));
+    CHECK(f.state().check.report.has_value());
+
+    // Removing the download removes its result too.
+    REQUIRE(f.controller->removeDownload(queued->id).ok());
+    CHECK_FALSE(std::filesystem::exists(mods::reportPath(f.context->paths(), queued->id)));
 }

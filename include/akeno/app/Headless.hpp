@@ -19,9 +19,10 @@ int runSelfCheck(AppContext& context, SystemReport* reportOut = nullptr);
 // Returns 0 on success, 1 if the list could not be read.
 int runListGames(AppContext& context);
 
-// Ladder steps 5 and 6: downloads a small harmless file through the real download engine into
-// downloads/, checks its SHA-256, deletes it again and writes logs/download-test-<ts>.txt.
-// Returns 0 when the file arrived intact, 1 otherwise.
+// Ladder steps 5 to 9: downloads a small harmless archive through the real download engine into
+// downloads/, checks its SHA-256, unpacks it into staging and analyses it, deletes the staging
+// folder, describes the (not executed) install plan, deletes the download and writes
+// logs/download-test-<ts>.txt. Returns 0 when every step passed, 1 otherwise.
 struct DownloadTestSpec {
     std::string url;
     std::string sha256;

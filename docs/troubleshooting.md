@@ -79,6 +79,21 @@ The Downloads tab shows the reason. ✕ tries again (resuming where possible),
 
 Interrupted downloads continue the next time Akeno starts.
 
+## "The check failed" / "The archive was refused"
+
+Akeno refuses the whole archive when one entry is unsafe: a path leaving its
+folder, an absolute path, a link, a device, a password, an archive bomb, or a
+name that is not valid text. The message names the reason and an example
+entry. Such a mod cannot be installed; please report the catalogue entry.
+Other messages:
+
+* *Not enough free space to unpack this mod*: the check needs the unpacked
+  size plus the 2 GB reserve.
+* *An interrupted operation must be resolved first*: open Home and resolve it.
+
+The staging folder of a check is always deleted afterwards. If Akeno stops
+during a check, the next start offers to clean it up.
+
 ## The search keyboard does not open (PS5)
 
 Akeno opens the console's keyboard dialog. If it does not appear within a few

@@ -148,6 +148,27 @@ private:
     std::string removeId_;
 };
 
+// The result of checking a downloaded mod: findings, conflicts, the dry-run install plan and
+// the file list. Starts the check (or shows the stored result) when opened.
+class ModCheckScreen final : public Screen {
+public:
+    explicit ModCheckScreen(std::string downloadId) : downloadId_(std::move(downloadId)) {}
+    std::string title() const override { return "Check"; }
+    void update(UiEnv& env) override;
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool animating(const UiEnv& env) const override { return env.state.check.running; }
+    const std::string& downloadId() const { return downloadId_; }
+    int scroll() const { return scroll_; }
+
+private:
+    std::string downloadId_;
+    bool requested_ = false;
+    int scroll_ = 0;
+    int maxScroll_ = 0;
+};
+
 // A yes/no question. Cancel is focused first; CIRCLE also cancels.
 class ConfirmScreen final : public Screen {
 public:
