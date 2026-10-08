@@ -12,6 +12,7 @@ add_executable(akeno_tests
     security/test_safe_fs.cpp
     security/test_image_probe.cpp
     security/test_sha256.cpp
+    security/test_digests.cpp
     platform/test_platform.cpp
     network/test_url.cpp
     network/test_http_policy.cpp

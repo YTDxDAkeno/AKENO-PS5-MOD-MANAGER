@@ -80,3 +80,33 @@ TEST_CASE("log lines are single-line and bounded") {
     CHECK(records[0].message == "multi line");
     CHECK(records[1].message.size() <= 2048);
 }
+
+TEST_CASE("the file sink hands every record to the kernel at once, without a flush") {
+    // 0.2.0-alpha buffered INFO lines in user space; the PS5 export then read an empty akeno.log.
+    test::TempDir dir;
+    RotatingFileSink sink(dir.path(), 1024 * 1024, 3);
+    LogRecord record;
+    record.level = LogLevel::Info;
+    record.timestamp = "2026-10-08T16:51:40Z";
+    record.category = "install";
+    record.message = "stage 3/7 files-installed: ok";
+    sink.write(record);
+    // Read through a separate descriptor while the sink is still open and never flushed.
+    std::ifstream in(dir.path() / "akeno.log");
+    std::stringstream content;
+    content << in.rdbuf();
+    CHECK(content.str().find("stage 3/7 files-installed: ok") != std::string::npos);
+}
+
+TEST_CASE("the file sink appends to an existing log and keeps counting its size") {
+    test::TempDir dir;
+    test::writeText(dir.path() / "akeno.log", std::string(150, 'x') + "\n");
+    RotatingFileSink sink(dir.path(), 200, 2);
+    LogRecord record;
+    record.timestamp = "t";
+    record.category = "c";
+    record.message = std::string(80, 'y');
+    sink.write(record);  // would exceed 200 bytes: rotates first
+    CHECK(std::filesystem::exists(dir.path() / "akeno.log.1"));
+    CHECK(std::filesystem::file_size(dir.path() / "akeno.log") < 200);
+}

@@ -21,6 +21,7 @@
 #include "akeno/core/Limits.hpp"
 #include "akeno/core/OperationJournal.hpp"
 #include "akeno/core/Result.hpp"
+#include "akeno/compatibility/CompatibilityEngine.hpp"
 #include "akeno/games/GameInfo.hpp"
 #include "akeno/mods/Catalog.hpp"
 #include "akeno/providers/IModProvider.hpp"
@@ -50,6 +51,16 @@ struct InstalledMod {
     std::string installedAt;
     std::vector<StoredFile> files;
     bool pcSource = false;  // retained so activation can repeat the no-replacement check
+    // The compatibility decision when it was installed. Mods installed before the decision was
+    // recorded have none; PC mods without one are never activated again (turn off or remove).
+    bool activationRecorded = false;
+    bool activationAllowed = false;
+    std::string outcome;            // compatibility::Outcome
+    std::string mappingConfidence;  // mods::MappingConfidence
+    std::string mappingRule;
+    std::string archiveRoot;        // archive folder that was mapped
+    std::string targetPrefix;       // game folder it was mapped to
+    std::string archiveSha256;      // of the verified download
 };
 
 // mods/<TITLE_ID>/state.json
@@ -75,6 +86,7 @@ struct InstallEnvironment {
     std::filesystem::path backportsRoot{std::string(kDefaultBackportsRoot)};
     std::uint64_t storageReserve = limits::kStorageSafetyReserveBytes;
     std::function<Result<security::StorageSpace>(const std::filesystem::path&)> storageQuery;  // default statvfs
+    const compatibility::Registry* registry = nullptr;  // default: the built-in registry
 };
 
 struct InstallRequest {
@@ -94,6 +106,13 @@ struct InstallRequest {
     // only where the game's folder can be checked.
     bool pcSource = false;
     std::string gameFolder;  // the game's files (folder games); empty when they cannot be read
+    // The curated Akeno catalogue: archiveRoot/targetPrefix are the manifest's mapping. When
+    // false, the mapping comes from the archive layout analysis.
+    bool curated = false;
+    std::string gameVersion;
+    std::string contentId;
+    bool installedPkg = false;
+    std::string archiveSha256;  // verified at download time; logged, never re-derived from names
 };
 
 // The title whose overlay is changed. `mounted` and `installedPkg` come from ShadowMountPlus.

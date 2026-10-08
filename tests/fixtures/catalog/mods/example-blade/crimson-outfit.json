@@ -29,8 +29,8 @@
   },
   "download": {
     "url": "http://127.0.0.1:10101/files/example-blade-crimson-outfit-1.2.0.zip",
-    "size": 745,
-    "sha256": "05504e0e61ab997a057e3abf323aeff5b17b7fad7d6daaf7a0942b22faef236f",
+    "size": 926,
+    "sha256": "87516ee2831d4bda2d43a8ab1b0b7fb006619a8112180d74604a396bffc1c732",
     "format": "zip"
   },
   "installation": {

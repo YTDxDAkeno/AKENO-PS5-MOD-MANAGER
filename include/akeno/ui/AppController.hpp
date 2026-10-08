@@ -122,6 +122,7 @@ private:
     std::optional<std::vector<InstalledModRow>> installedRows_;            // same
     // Runs one change to installed mods on the worker; `work` returns the message to show.
     void runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work);
+    std::vector<mods::InstalledModPaths> installedModPaths(const std::string& titleId) const;
     install::TitleTarget targetFor(const std::string& titleId) const;
 };
 

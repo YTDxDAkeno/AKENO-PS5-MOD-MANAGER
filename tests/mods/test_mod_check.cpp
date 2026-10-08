@@ -3,6 +3,7 @@
 
 #include "ArchiveTestSupport.hpp"
 #include "TestSupport.hpp"
+#include "UnrealTestSupport.hpp"
 #include "akeno/mods/ModCheck.hpp"
 #include "akeno/security/Sha256.hpp"
 
@@ -62,8 +63,9 @@ struct Fixture {
     }
 };
 
+const std::string kCrimsonPak = test::legacyPak({{"ExampleBlade/Content/Outfits/Crimson.uasset", std::string(4000, 'p')}});
 const std::vector<test::EntrySpec> kGoodMod{
-    {"Crimson/Content/Paks/~mods/crimson.pak", std::string(4000, 'p'), AE_IFREG, "", ""},
+    {"Crimson/Content/Paks/~mods/crimson.pak", kCrimsonPak, AE_IFREG, "", ""},
     {"Crimson/Content/crimson.ini", "[a]\n", AE_IFREG, "", ""},
     {"README.txt", "Read me", AE_IFREG, "", ""},
 };
@@ -87,7 +89,12 @@ TEST_CASE("a mod is checked in staging, and staging and journal are gone afterwa
     CHECK(report->analysis.installCount == 2);
     CHECK(report->analysis.installable);
     CHECK(report->analysis.status == CompatibilityStatus::Verified);
-    CHECK(report->analysis.files[0].sha256 == security::sha256Hex(std::string(4000, 'p')));
+    CHECK(report->analysis.files[0].sha256 == security::sha256Hex(kCrimsonPak));
+    CHECK(report->assessment.outcome == compatibility::Outcome::VerifiedPs5);
+    CHECK(report->assessment.activationAllowed);
+    CHECK(report->layout.rule == "manifest");
+    CHECK(report->unreal.detected);
+    CHECK(report->unreal.maxPakVersion == 8);
 
     // Stored and read back.
     REQUIRE(saveReport(*f.fs, f.paths, report.value()).ok());
@@ -95,13 +102,18 @@ TEST_CASE("a mod is checked in staging, and staging and journal are gone afterwa
     REQUIRE(loaded.ok());
     CHECK(loaded->displayName == "Crimson Outfit Recolour");
     CHECK(loaded->analysis.installCount == 2);
-    CHECK(loaded->analysis.installBytes == 4004);
+    CHECK(loaded->analysis.installBytes == kCrimsonPak.size() + 4);
+    CHECK(loaded->assessment.outcome == compatibility::Outcome::VerifiedPs5);
+    CHECK(loaded->layout.archiveRoot == "Crimson");
+    CHECK(loaded->unreal.containedPackages == std::vector<std::string>{"/Game/Outfits/Crimson"});
     CHECK(loaded->analysis.files.size() == 3);
     CHECK(loaded->analysis.installable);
 
     completeReport(loaded.value(), f.paths);
     REQUIRE(loaded->plan.has_value());
     CHECK(loaded->plan->files == 2);
+    CHECK(loaded->plan->executable);
+    CHECK(loaded->plan->mappingConfidence == "established");
     CHECK(loaded->conflicts.empty());
 }
 

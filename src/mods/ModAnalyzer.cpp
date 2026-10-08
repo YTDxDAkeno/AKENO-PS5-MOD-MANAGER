@@ -5,8 +5,10 @@
 #include <map>
 #include <set>
 
+#include "akeno/compatibility/CompatibilityEngine.hpp"
 #include "akeno/core/Limits.hpp"
 #include "akeno/core/Strings.hpp"
+#include "akeno/mods/ArchiveLayout.hpp"
 
 namespace akeno::mods {
 
@@ -69,6 +71,23 @@ std::string_view toString(FileKind kind) noexcept {
         case FileKind::Junk: return "junk";
     }
     return "asset";
+}
+
+std::string_view toString(TargetState state) noexcept {
+    switch (state) {
+        case TargetState::Unknown: return "unknown";
+        case TargetState::New: return "new";
+        case TargetState::Replaces: return "replaces";
+        case TargetState::TypeConflict: return "type-conflict";
+    }
+    return "unknown";
+}
+
+std::optional<TargetState> parseTargetState(std::string_view text) noexcept {
+    for (auto state : {TargetState::Unknown, TargetState::New, TargetState::Replaces, TargetState::TypeConflict}) {
+        if (toString(state) == text) return state;
+    }
+    return std::nullopt;
 }
 
 std::string_view toString(FindingLevel level) noexcept {
@@ -137,6 +156,10 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
     int maxDepth = 0;
     std::size_t paks = 0;
     std::size_t unityFiles = 0;
+    std::map<std::string, std::string> mapped;
+    if (input.mapping) {
+        for (const auto& [archivePath, installPath] : *input.mapping) mapped.emplace(archivePath, installPath);
+    }
 
     for (const auto& file : input.files) {
         AnalyzedFile analyzed;
@@ -162,11 +185,17 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
         if (ext == "pak" || ext == "utoc" || ext == "ucas") ++paks;
         if (ext == "assets" || ext == "bundle" || ext == "resource") ++unityFiles;
 
-        const bool insideRoot = root.empty() || strings::startsWith(file.path, root);
+        const auto target = mapped.find(file.path);
+        const bool insideRoot = input.mapping ? target != mapped.end()
+                                              : root.empty() || strings::startsWith(file.path, root);
         if (!insideRoot) {
-            ++outsideRoot;
+            if (analyzed.kind != FileKind::Junk) ++outsideRoot;
         } else if (analyzed.kind != FileKind::Junk) {
-            analyzed.installPath = prefix + file.path.substr(root.size());
+            analyzed.installPath = input.mapping ? target->second : prefix + file.path.substr(root.size());
+            if (analyzed.installPath.find('/') == std::string::npos &&
+                (strings::toLowerAscii(analyzed.installPath) == "eboot.bin" || analyzed.kind == FileKind::NativeCode)) {
+                result.flags.executableReplacement = true;
+            }
             const auto parts = components(analyzed.installPath);
             const std::string top = parts.empty() ? std::string() : strings::toLowerAscii(parts.front());
             if (top == "fakelib" || top == "fakelib2") fakelib = true;
@@ -186,6 +215,15 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
 
     auto count = [&](FileKind kind) { return kinds.count(kind) != 0 ? kinds[kind].first : std::size_t{0}; };
     auto example = [&](FileKind kind) { return kinds.count(kind) != 0 ? kinds[kind].second : std::string(); };
+    result.flags.nativeCode = count(FileKind::NativeCode);
+    result.flags.windowsCode = count(FileKind::WindowsCode);
+    result.flags.scripts = count(FileKind::Script);
+    result.flags.nestedArchives = count(FileKind::Archive);
+    result.flags.fakelib = fakelib;
+    result.flags.systemFolders = sceSys;
+    result.flags.pathTooLong = tooLong;
+    if (ue4ss) result.flags.loaders.push_back("UE4SS");
+    if (!loader.empty()) result.flags.loaders.push_back(loader);
 
     // Blockers: content Akeno will never install.
     if (count(FileKind::NativeCode) > 0) {
@@ -223,8 +261,9 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
     }
     if (result.installCount == 0) {
         add(FindingLevel::Blocker,
-            outsideRoot > 0 ? "No file is inside the folder the catalogue names (archiveRoot). Nothing would be installed."
-                            : "The archive contains nothing to install.");
+            input.mapping ? "No file of the archive has an installation path in the game."
+            : outsideRoot > 0 ? "No file is inside the folder the catalogue names (archiveRoot). Nothing would be installed."
+                              : "The archive contains nothing to install.");
     }
     if (input.sourceType == games::SourceType::Pkg) {
         if (maxDepth > 64) {
@@ -258,8 +297,10 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
 
     // Information.
     if (outsideRoot > 0) {
-        add(FindingLevel::Info, strings::concat(outsideRoot, " files outside the mod folder are not installed (for "
-                                                             "example a readme)."));
+        add(FindingLevel::Info, strings::concat(outsideRoot, input.mapping ? " files have no installation path and are not "
+                                                                            "installed (for example a readme)."
+                                                                          : " files outside the mod folder are not installed (for "
+                                                                            "example a readme)."));
     }
     if (count(FileKind::Junk) > 0) {
         add(FindingLevel::Info, strings::concat(count(FileKind::Junk), " system leftover files (__MACOSX, .DS_Store) "
@@ -301,7 +342,7 @@ std::vector<Conflict> predictConflicts(const ModAnalysis& mod, const std::vector
 }
 
 InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, const std::string& titleId,
-                        const std::string& downloadId, std::optional<bool> hardLinks) {
+                        const std::string& downloadId, std::optional<bool> hardLinks, const PlanContext* context) {
     InstallPlan plan;
     plan.titleId = titleId;
     plan.modStore = paths.mods() / titleId / downloadId;
@@ -318,8 +359,39 @@ InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, cons
     }
     for (const auto& file : analysis.files) {
         if (file.installPath.empty()) continue;
-        if (plan.mapping.size() >= 200) break;
+        switch (file.target) {
+            case TargetState::New: ++plan.additions; break;
+            case TargetState::Replaces: ++plan.replacements; break;
+            case TargetState::Unknown: ++plan.unknownTargets; break;
+            case TargetState::TypeConflict: break;
+        }
+        if (plan.mapping.size() >= 200) continue;
         plan.mapping.emplace_back(file.archivePath, plan.backportDirectory + "/" + file.installPath);
+    }
+    if (context != nullptr) {
+        plan.reserveBytes = context->reserveBytes;
+        for (const auto& conflict : context->installedConflicts) {
+            plan.installedConflicts.push_back(strings::concat(conflict.otherName, ": ", conflict.count,
+                                                              conflict.count == 1 ? " file" : " files"));
+        }
+        if (context->layout != nullptr) {
+            plan.mappingRule = context->layout->rule;
+            plan.mappingConfidence = std::string(toString(context->layout->confidence));
+        }
+        if (const compatibility::Assessment* a = context->assessment; a != nullptr) {
+            plan.mappingConfidence = std::string(toString(a->mappingConfidence));
+            plan.outcome = std::string(compatibility::toString(a->outcome));
+            plan.category = std::string(compatibility::toString(a->category));
+            plan.loading = std::string(compatibility::toString(a->loading));
+            plan.platform = std::string(compatibility::toString(a->platform));
+            plan.blockedReasons = a->blockedReasons;
+            plan.needsConfirmation = a->needsConfirmation;
+            plan.executable = a->activationAllowed && !analysis.hasBlockers();
+            if (!plan.executable) {
+                plan.notExecutableReason = !a->blockedReasons.empty() ? a->blockedReasons.front()
+                                                                      : "The checks found problems that block installing.";
+            }
+        }
     }
     std::string overlayStep = "Create " + plan.overlayNext.string();
     if (hardLinks == true) {
@@ -336,6 +408,14 @@ InstallPlan planInstall(const ModAnalysis& analysis, const AppPaths& paths, cons
                        "the console supports them, otherwise copies (up to " +
                        strings::formatBytes(plan.bytes) + " more).";
     }
+    plan.requiredBytes = plan.bytes + plan.overlayExtraBytes + plan.reserveBytes;
+    plan.verification = {
+        "Every stored file is compared with the SHA-256 recorded when it was checked.",
+        "Every overlay copy is hashed again before the overlay is published.",
+        "The overlay may hold only plain files and folders, no fakelib or system folders.",
+        "Not observable by Akeno: whether ShadowMountPlus mounts the overlay, whether the game opens the files, "
+        "and whether the mod works. They stay unverified until tested on the console.",
+    };
     plan.steps = {
         {"Keep the mod's files",
          strings::concat("Copy ", plan.files, " files (", strings::formatBytes(plan.bytes), ") into ",

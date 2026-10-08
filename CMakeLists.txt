@@ -107,6 +107,11 @@ add_library(akeno_core STATIC
     src/security/SafeFs.cpp
     src/security/ImageProbe.cpp
     src/security/Sha256.cpp
+    src/security/Digests.cpp
+    src/unreal/CityHash.cpp
+    src/unreal/UnrealFormats.cpp
+    src/unreal/UnrealAnalyzer.cpp
+    src/security/SafeOpen.cpp
     src/platform/PlatformCommon.cpp
     src/network/Url.cpp
     src/network/Http.cpp
@@ -117,10 +122,12 @@ add_library(akeno_core STATIC
     src/games/GameInfo.cpp
     src/games/GameLibrary.cpp
     src/games/ParamJson.cpp
+    src/games/GameTree.cpp
     src/shadowmount/ShadowMountClient.cpp
     src/shadowmount/ShadowMountGameProvider.cpp
     src/mods/Catalog.cpp
     src/compatibility/CompatibilityRules.cpp
+    src/compatibility/CompatibilityEngine.cpp
     src/providers/AkenoCatalogProvider.cpp
     src/providers/NexusProvider.cpp
     src/providers/GameBananaProvider.cpp
@@ -129,8 +136,11 @@ add_library(akeno_core STATIC
     src/downloads/DownloadManager.cpp
     src/archives/SecureExtractor.cpp
     src/mods/ModAnalyzer.cpp
+    src/mods/ArchiveLayout.cpp
     src/mods/ModCheck.cpp
+    src/mods/ModPreparation.cpp
     src/install/OverlayManager.cpp
+    src/install/InstallLog.cpp
     src/diagnostics/DiagnosticExport.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp

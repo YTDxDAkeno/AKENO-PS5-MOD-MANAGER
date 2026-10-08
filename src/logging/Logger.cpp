@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/logging/Logger.hpp"
 
+#include <cerrno>
 #include <cstdio>
 #include <system_error>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "akeno/core/Limits.hpp"
 #include "akeno/core/Strings.hpp"
@@ -36,24 +41,32 @@ std::string LogRecord::format() const {
 RotatingFileSink::RotatingFileSink(std::filesystem::path directory, std::size_t maxBytes, int maxFiles)
     : directory_(std::move(directory)), maxBytes_(maxBytes), maxFiles_(maxFiles < 1 ? 1 : maxFiles) {}
 
-void RotatingFileSink::openIfNeeded() {
-    if (stream_.is_open() || failed_) {
-        return;
-    }
-    std::error_code ec;
-    auto path = currentFile();
-    currentBytes_ = std::filesystem::exists(path, ec) ? std::filesystem::file_size(path, ec) : 0;
-    if (ec) {
-        currentBytes_ = 0;
-    }
-    stream_.open(path, std::ios::out | std::ios::app | std::ios::binary);
-    if (!stream_.is_open()) {
-        failed_ = true;  // logging must never take the application down
+RotatingFileSink::~RotatingFileSink() { closeFile(); }
+
+void RotatingFileSink::closeFile() {
+    if (fd_ >= 0) {
+        (void)::fsync(fd_);
+        ::close(fd_);
+        fd_ = -1;
     }
 }
 
+void RotatingFileSink::openIfNeeded() {
+    if (fd_ >= 0 || failed_) {
+        return;
+    }
+    const auto path = currentFile();
+    fd_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0644);
+    if (fd_ < 0) {
+        failed_ = true;  // logging must never take the application down
+        return;
+    }
+    struct stat info {};
+    currentBytes_ = ::fstat(fd_, &info) == 0 && info.st_size > 0 ? static_cast<std::size_t>(info.st_size) : 0;
+}
+
 void RotatingFileSink::rotate() {
-    stream_.close();
+    closeFile();
     std::error_code ec;
     for (int index = maxFiles_ - 1; index >= 1; --index) {
         auto from = index == 1 ? currentFile() : directory_ / ("akeno.log." + std::to_string(index - 1));
@@ -72,27 +85,33 @@ void RotatingFileSink::rotate() {
 
 void RotatingFileSink::write(const LogRecord& record) {
     openIfNeeded();
-    if (!stream_.is_open()) {
+    if (fd_ < 0) {
         return;
     }
     std::string line = record.format();
     line.push_back('\n');
     if (currentBytes_ + line.size() > maxBytes_ && currentBytes_ > 0) {
         rotate();
-        if (!stream_.is_open()) {
+        if (fd_ < 0) {
             return;
         }
     }
-    stream_.write(line.data(), static_cast<std::streamsize>(line.size()));
+    std::size_t written = 0;
+    while (written < line.size()) {
+        const ssize_t n = ::write(fd_, line.data() + written, line.size() - written);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return;  // a full disk must not stop the application
+        written += static_cast<std::size_t>(n);
+    }
     currentBytes_ += line.size();
     if (record.level >= LogLevel::Warn) {
-        stream_.flush();  // keep errors on disk even if the process dies afterwards
+        (void)::fsync(fd_);  // keep errors on disk even if the console shuts down afterwards
     }
 }
 
 void RotatingFileSink::flush() {
-    if (stream_.is_open()) {
-        stream_.flush();
+    if (fd_ >= 0) {
+        (void)::fsync(fd_);
     }
 }
 

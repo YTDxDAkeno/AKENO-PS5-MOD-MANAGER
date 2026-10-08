@@ -35,9 +35,15 @@ public:
 };
 
 // Appends to <dir>/akeno.log and rotates to akeno.log.1 .. akeno.log.(N-1) by size.
+// Every record is handed to the kernel with write(2) at once (no user-space buffer), so a
+// process that is killed or a console that shuts down loses nothing that was logged before.
+// Warnings, errors and flush() also fsync, which survives a power loss on most filesystems.
 class RotatingFileSink final : public ILogSink {
 public:
     RotatingFileSink(std::filesystem::path directory, std::size_t maxBytes, int maxFiles);
+    ~RotatingFileSink() override;
+    RotatingFileSink(const RotatingFileSink&) = delete;
+    RotatingFileSink& operator=(const RotatingFileSink&) = delete;
     void write(const LogRecord& record) override;
     void flush() override;
     std::filesystem::path currentFile() const { return directory_ / "akeno.log"; }
@@ -45,11 +51,12 @@ public:
 private:
     void openIfNeeded();
     void rotate();
+    void closeFile();
 
     std::filesystem::path directory_;
     std::size_t maxBytes_;
     int maxFiles_;
-    std::ofstream stream_;
+    int fd_ = -1;
     std::size_t currentBytes_ = 0;
     bool failed_ = false;
 };

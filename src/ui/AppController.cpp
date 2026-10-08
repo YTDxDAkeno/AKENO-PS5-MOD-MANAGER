@@ -14,6 +14,7 @@
 #include "akeno/install/OverlayManager.hpp"
 #include "akeno/mods/Catalog.hpp"
 #include "akeno/mods/ModCheck.hpp"
+#include "akeno/mods/ModPreparation.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
 #include "akeno/security/ImageProbe.hpp"
 #include "akeno/security/SafeName.hpp"
@@ -272,6 +273,7 @@ void AppController::exportDiagnostics(const std::string& titleId) {
     if (!titleId.empty() && !games::isValidTitleId(titleId)) {
         addNotice("The diagnostic title ID is invalid.", ToastKind::Error); return;
     }
+    logger().flush();  // the export reads akeno.log: everything logged so far must be on disk
     diagnostics::Request request;
     request.paths = context_.paths();
     request.titleId = titleId;
@@ -781,12 +783,20 @@ void AppController::checkDownload(const std::string& id, bool again) {
     request.modVersion = download.modVersion;
     request.titleId = download.gameTitleId;
     for (const auto& game : allGames_) {
-        if (game.titleId == download.gameTitleId) request.sourceType = game.sourceType;
+        if (game.titleId != download.gameTitleId) continue;
+        request.sourceType = game.sourceType;
+        request.gameVersion = game.version;
+        request.contentId = game.contentId;
+        request.installedPkg = game.installedPkg;
+        if (!game.installedPkg && game.sourceType == games::SourceType::Folder) request.gameFolder = game.installPath;
     }
     request.archiveRoot = download.archiveRoot;
     request.targetPrefix = download.targetPrefix;
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
+    request.pcSource = mods::isPcProvider(download.mod.providerId);
+    request.curated = mods::isCuratedProvider(download.mod.providerId) && !request.pcSource;
+    request.installedMods = installedModPaths(download.gameTitleId);
     const bool interrupted = context_.interruptedOperation().has_value();
     const std::optional<bool> hardLinks =
         state_.systemCheck.report ? state_.systemCheck.report->hardLinksSupported : std::nullopt;
@@ -806,6 +816,11 @@ void AppController::checkDownload(const std::string& id, bool again) {
     tasks_.submit([this, request, again, cancel, interrupted, hardLinks, alive, shared] {
         Result<mods::ModCheckReport> result = makeError(ErrorCode::NotFound, "No stored result.");
         if (!again) result = mods::loadReport(context_.paths(), request.downloadId);
+        // A stored result describes the game as it was: check again after a game update.
+        if (result && result->game.version != request.gameVersion) {
+            logger().info("check", request.downloadId + ": the game version changed since the check; checking again");
+            result = makeError(ErrorCode::NotFound, "Stale result.");
+        }
         if (!result) {
             mods::ModCheckEnvironment env{context_.fs(), context_.paths(), context_.journal(), interrupted,
                                           limits::kStorageSafetyReserveBytes, {}, {}};
@@ -830,7 +845,7 @@ void AppController::checkDownload(const std::string& id, bool again) {
                 if (!saved) logger().warn("check", "could not store the result: " + saved.error().describe());
             }
         }
-        if (result) mods::completeReport(result.value(), context_.paths(), hardLinks);
+        if (result) mods::completeReport(result.value(), context_.paths(), hardLinks, request.installedMods);
         mainQueue_.post([this, alive, id = request.downloadId, name = request.displayName,
                          result = std::move(result)]() mutable {
             if (!alive->load()) return;
@@ -847,6 +862,26 @@ void AppController::checkDownload(const std::string& id, bool again) {
             current.report = std::move(result).value();
         });
     });
+}
+
+std::vector<mods::InstalledModPaths> AppController::installedModPaths(const std::string& titleId) const {
+    std::vector<mods::InstalledModPaths> result;
+    if (!games::isValidTitleId(titleId)) return result;
+    install::InstallEnvironment env{context_.fs(),
+                                    context_.paths(),
+                                    context_.journal(),
+                                    false,
+                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                    limits::kStorageSafetyReserveBytes,
+                                    {}};
+    auto state = install::loadTitleState(env, titleId);
+    if (!state) return result;
+    for (const auto& mod : state->mods) {
+        mods::InstalledModPaths paths{mod.downloadId, mod.name, {}};
+        for (const auto& file : mod.files) paths.installPaths.push_back(file.installPath);
+        result.push_back(std::move(paths));
+    }
+    return result;
 }
 
 void AppController::cancelCheck() {
@@ -904,8 +939,12 @@ void AppController::installChecked(const std::string& id) {
     request.targetPrefix = download.targetPrefix;
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
-    request.pcSource = download.mod.providerId == providers::kNexusProviderId ||
-                       download.mod.providerId == providers::kGameBananaProviderId;
+    request.pcSource = mods::isPcProvider(download.mod.providerId);
+    request.curated = mods::isCuratedProvider(download.mod.providerId) && !request.pcSource;
+    request.gameVersion = game->version;
+    request.contentId = game->contentId;
+    request.installedPkg = game->installedPkg;
+    request.archiveSha256 = download.expectedSha256;
     if (!game->installedPkg && game->sourceType == games::SourceType::Folder) request.gameFolder = game->installPath;
     const install::TitleTarget target{game->titleId, game->mounted, game->installedPkg, game->installPath};
     const bool interrupted = context_.interruptedOperation().has_value();
