@@ -5,6 +5,11 @@ on the SMP source at `drakmor/ShadowMountPlus@4cde42a`, the 1.7 line (see
 `docs/research.md`). Behaviour on real hardware is **unverified** until
 it is recorded in `docs/compatibility.md`.
 
+For the exact **1.7beta4** comparison, PPSA24701 log evidence and known gaps in
+cached mount-state checks, backport selection and rollback, see the
+[offline investigation](investigations/ppsa24701-overlay.md). Publication of an
+overlay directory, an SMP mount and game file consumption are separate events.
+
 ## 1. Connection
 
 * Endpoint: `http://127.0.0.1:10101` (SMP default). The port can be

@@ -3,11 +3,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <map>
 #include <set>
 #include <system_error>
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "akeno/archives/SecureExtractor.hpp"
 #include "akeno/core/Json.hpp"
@@ -82,6 +86,48 @@ bool existsNoFollow(const fs::path& path) {
     return ::lstat(path.c_str(), &info) == 0;
 }
 
+// ENOENT below a readable game root means a new path; other lookup failures do not.
+Result<bool> gamePathExists(const fs::path& root, const std::string& relative) {
+    auto normalized = security::normalizeAbsolute(root.string());
+    if (!normalized || !isSafeRelativePath(relative)) {
+        return makeError(ErrorCode::SafetyViolation, "The game file mapping is not a safe absolute/relative path pair.");
+    }
+    struct stat info {};
+    if (::lstat(root.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
+        return makeError(ErrorCode::SafetyViolation, "The game's folder cannot be inspected; PC replacements cannot be ruled out.");
+    }
+    fs::path current = root;
+    const fs::path rel(relative);
+    for (auto it = rel.begin(); it != rel.end(); ++it) {
+        current /= *it;
+        if (::lstat(current.c_str(), &info) != 0) {
+            if (errno == ENOENT) return false;
+            return makeError(ErrorCode::IoError, "A game path could not be inspected.", relative);
+        }
+        if (S_ISLNK(info.st_mode) || (std::next(it) != rel.end() && !S_ISDIR(info.st_mode))) {
+            return makeError(ErrorCode::SafetyViolation, "A game path contains a link or a non-directory parent.", relative);
+        }
+    }
+    return true;
+}
+
+Result<std::string> fileHead(const fs::path& path) {
+    const int fd = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return makeError(ErrorCode::IoError, "Could not inspect an overlay file.", path.string());
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
+        ::close(fd);
+        return makeError(ErrorCode::SafetyViolation, "An overlay entry is not a regular file.", path.string());
+    }
+    std::string head(archives::kHeadBytes, '\0');
+    ssize_t count;
+    do { count = ::read(fd, head.data(), head.size()); } while (count < 0 && errno == EINTR);
+    ::close(fd);
+    if (count < 0) return makeError(ErrorCode::IoError, "Could not read an overlay file.", path.string());
+    head.resize(static_cast<std::size_t>(count));
+    return head;
+}
+
 json::Json toJson(const TitleState& state) {
     json::Json mods = json::Json::array();
     for (const auto& mod : state.mods) {
@@ -98,6 +144,7 @@ json::Json toJson(const TitleState& state) {
                         {"name", mod.name},
                         {"version", mod.version},
                         {"enabled", mod.enabled},
+                        {"pcSource", mod.pcSource},
                         {"bytes", mod.bytes},
                         {"installedAt", mod.installedAt},
                         {"files", std::move(files)}});
@@ -135,6 +182,8 @@ Result<TitleState> fromJson(const json::Json& root, const std::string& titleId) 
         mod.downloadId = json::getString(item, "downloadId").value_or("");
         if (!isSafeId(mod.downloadId)) return invalid("a mod has an invalid id");
         mod.mod.providerId = json::getString(item, "provider").value_or("");
+        mod.pcSource = json::getBool(item, "pcSource").value_or(false) ||
+                       mod.mod.providerId == "nexus" || mod.mod.providerId == "gamebanana";
         mod.mod.modId = json::getString(item, "modId").value_or("");
         mod.name = json::getString(item, "name").value_or(mod.downloadId);
         mod.version = json::getString(item, "version").value_or("");
@@ -371,7 +420,7 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
     }
 
     if (request.pcSource) {
-        // Replacing a game file with its PC version crashed a PS5 (2026-10-07): PC mods may only add.
+        // A PC replacement has no established PS5 data-format compatibility.
         if (request.gameFolder.empty()) {
             return fail(makeError(ErrorCode::Unsupported,
                                   "This is a PC mod, and Akeno cannot see this game's files to make sure it replaces "
@@ -381,7 +430,9 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
         std::string example;
         for (const auto& file : analysis.files) {
             if (file.installPath.empty()) continue;
-            if (existsNoFollow(fs::path(request.gameFolder) / file.installPath)) {
+            auto exists = gamePathExists(request.gameFolder, file.installPath);
+            if (!exists) return fail(exists.error());
+            if (exists.value()) {
                 if (replaced++ == 0) example = file.installPath;
             }
         }
@@ -399,6 +450,7 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
     mod.mod = request.mod;
     mod.name = request.name;
     mod.version = request.version;
+    mod.pcSource = request.pcSource;
     mod.enabled = true;
     mod.installedAt = strings::utcTimestamp();
     for (const auto& file : analysis.files) {
@@ -502,16 +554,46 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
     };
 
     if (!enabled.empty()) {
-        (void)env.journal.recordStep("build");
+        if (auto recorded = env.journal.recordStep("build"); !recorded) return fail(recorded.error());
         if (auto space = checkSpace(env, env.paths.staging(), bytes, "to build the overlay"); !space) {
             return fail(space.error());
         }
         if (auto made = env.fs.createDirectories(next); !made) return fail(made.error());
         std::set<std::string> written;
+        std::map<std::string, std::string> spellings;
         for (const InstalledMod* mod : enabled) {
             const fs::path store = env.paths.mods() / titleId / mod->downloadId / "files";
             for (const StoredFile& file : mod->files) {
                 const fs::path source = store / file.storePath;
+                if (auto safe = env.fs.guard().checkWritable(source); !safe) return fail(safe.error());
+                auto head = fileHead(source);
+                if (!head) return fail(head.error());
+                mods::AnalysisInput input;
+                input.files.push_back({file.storePath, file.size, file.sha256, head.value()});
+                const auto analysis = mods::analyzeMod(input);
+                for (const auto& finding : analysis.findings) {
+                    if (finding.level == mods::FindingLevel::Blocker) {
+                        return fail(makeError(ErrorCode::SafetyViolation,
+                                              "A stored mod no longer passes compatibility checks: " + finding.message,
+                                              file.storePath));
+                    }
+                }
+                if (mod->pcSource) {
+                    auto exists = gamePathExists(target.installPath, file.installPath);
+                    if (!exists) return fail(exists.error());
+                    if (exists.value()) return fail(makeError(ErrorCode::SafetyViolation,
+                        "A stored PC mod would replace a game file; activation was refused.", file.installPath));
+                }
+                // Check directory spellings too: Data/a + data/b is also ambiguous.
+                fs::path prefix;
+                for (const auto& part : fs::path(file.installPath)) {
+                    prefix /= part;
+                    auto [it, inserted] = spellings.emplace(lower(prefix.string()), prefix.string());
+                    if (!inserted && it->second != prefix.string()) {
+                        return fail(makeError(ErrorCode::SafetyViolation,
+                                              "Overlay paths differ only in upper/lower case.", prefix.string()));
+                    }
+                }
                 auto hash = security::sha256File(source);
                 if (!hash || hash.value() != file.sha256) {
                     return fail(makeError(ErrorCode::SchemaError,
@@ -529,27 +611,47 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
                     if (auto removed = env.fs.removeFile(destination); !removed) return fail(removed.error());
                 }
                 if (auto copied = env.fs.copyFile(source, destination); !copied) return fail(copied.error());
+                auto copiedHash = security::sha256File(destination);
+                if (!copiedHash || copiedHash.value() != file.sha256) {
+                    return fail(makeError(ErrorCode::SchemaError, "An overlay copy failed verification.", file.installPath));
+                }
                 written.insert(lower(file.installPath));
                 ++result.files;
                 result.bytes += file.size;
             }
         }
-        (void)env.journal.recordStep("validate");
+        if (auto recorded = env.journal.recordStep("validate"); !recorded) return fail(recorded.error());
         std::size_t entries = 0;
         if (auto scanned = scanTree(next, entries, 0); !scanned) return fail(scanned.error());
         if (target.installedPkg && entries > kPackageRedirectLimit) {
             return fail(makeError(ErrorCode::Unsupported,
                                   strings::concat("For an installed package ShadowMountPlus can redirect at most ",
-                                                  kPackageRedirectLimit, " files and folders; these mods need ",
-                                                  entries, ".")));
+                                                  kPackageRedirectLimit, " redirects. This overlay has ", entries,
+                                                  " files and folders (a conservative upper bound, not an exact "
+                                                  "redirect count); it cannot be approved without the game tree.")));
         }
     }
 
-    // From here the live overlay changes. Each rename is atomic; a crash between them leaves no
-    // backport at all, which is the unmodified game.
+    // From here the published overlay changes. Each rename is atomic; a crash between them
+    // leaves no Akeno backport at this location. Other scan roots/mounted layers are unknown.
     if (auto made = env.fs.createDirectories(work); !made) return fail(made.error());
-    (void)env.journal.markOverlayTouched();
-    (void)env.journal.recordStep("swap");
+    if (auto recorded = env.journal.markOverlayTouched(); !recorded) return fail(recorded.error());
+    if (auto recorded = env.journal.recordStep("swap"); !recorded) return fail(recorded.error());
+    const TitleState originalState = state;
+    // Never remove `previous` if restoring the old overlay or its ownership state fails.
+    auto restore = [&](Error error) -> Error {
+        if (backportExists) {
+            if (auto restored = titleFs.rename(previous, backport); !restored) {
+                logger().error("install", "previous overlay retained for recovery: " + restored.error().describe());
+                return error;
+            }
+        }
+        if (auto saved = saveState(env, originalState); !saved) {
+            logger().error("install", "overlay ownership needs recovery: " + saved.error().describe());
+            return error;
+        }
+        return fail(std::move(error));
+    };
     if (backportExists) {
         if (auto moved = titleFs.rename(backport, previous); !moved) return fail(moved.error());
     }
@@ -557,23 +659,17 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
         // Record the new overlay first: a rename keeps the folder's identity, so after a crash the
         // state either matches the folder in place or finds none (Vanilla), never a stranger.
         auto identity = identityOf(next);
-        if (!identity) return fail(makeError(ErrorCode::IoError, "The new overlay cannot be found.", next.string()));
+        if (!identity) return restore(makeError(ErrorCode::IoError, "The new overlay cannot be found.", next.string()));
         state.overlayActive = true;
         state.backportPath = backport.string();
         state.backportDevice = identity->device;
         state.backportInode = identity->inode;
         state.appliedAt = strings::utcTimestamp();
         if (auto saved = saveState(env, state); !saved) {
-            if (backportExists) (void)titleFs.rename(previous, backport);
-            return fail(saved.error());
+            return restore(saved.error());
         }
         if (auto moved = titleFs.rename(next, backport); !moved) {
-            if (backportExists) {
-                if (auto restored = titleFs.rename(previous, backport); !restored) {
-                    logger().error("install", "could not restore the previous overlay: " + restored.error().describe());
-                }
-            }
-            return fail(moved.error());
+            return restore(moved.error());
         }
     } else {
         state.overlayActive = false;
@@ -613,12 +709,21 @@ Status setModEnabled(InstallEnvironment& env, const std::string& titleId, const 
 }
 
 Result<ApplyResult> setVanilla(const TitleTarget& target, InstallEnvironment& env) {
+    AKENO_TRY(checkCommon(env, target.titleId));
+    if (target.mounted) return makeError(ErrorCode::Busy, "The game is running or mounted. Close it, then try again.");
     auto loaded = loadTitleState(env, target.titleId);
     if (!loaded) return std::move(loaded).error();
     TitleState state = std::move(loaded).value();
+    const TitleState originalState = state;
     for (auto& mod : state.mods) mod.enabled = false;
     if (!state.mods.empty()) AKENO_TRY(saveState(env, state));
-    return applyOverlay(target, env);
+    auto applied = applyOverlay(target, env);
+    if (!applied && !state.mods.empty()) {
+        if (auto saved = saveState(env, originalState); !saved) {
+            logger().error("install", "could not restore mod selection: " + saved.error().describe());
+        }
+    }
+    return applied;
 }
 
 Status removeStoredMod(InstallEnvironment& env, const std::string& titleId, const std::string& downloadId) {

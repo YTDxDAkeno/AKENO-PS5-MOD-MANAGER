@@ -200,3 +200,9 @@ TEST_CASE("mods made for PC mod loaders are PC ONLY") {
     auto fluffy = analyzeMod(input({file("natives/STM/x.tex"), file("modinfo.ini", "name=")}));
     CHECK(hasFinding(fluffy, FindingLevel::Blocker, "Fluffy Mod Manager"));
 }
+
+TEST_CASE("dsts-loader directory remains unsupported without a ModConfig file") {
+    auto result = analyzeMod(input({file("pack/dsts-loader/data/char.bin")}));
+    CHECK_FALSE(result.installable);
+    CHECK(hasFinding(result, FindingLevel::Blocker, "dsts-loader"));
+}

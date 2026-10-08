@@ -8,6 +8,7 @@ desktop preview) and for the PS5 (ps5-payload-sdk).
 Requirements: CMake ≥ 3.21, Ninja (or Make), a C++20 compiler (GCC 13 or
 Clang 16+), pkg-config, and the development packages for libcurl, SQLite 3,
 SDL2, SDL2_ttf and SDL2_image.
+Host tests also require Python 3.10+ for the offline overlay diagnostic suite.
 
 Debian/Ubuntu:
 
@@ -55,6 +56,10 @@ Headless modes:
 ./build/src/ui/AkenoModManager --list-games --data-root /tmp/akeno
 ./build/AkenoSelfCheck --data-root /tmp/akeno
 ```
+
+For a strictly offline overlay inventory and compatibility report, see
+[Offline overlay diagnostics](overlay-diagnostics.md). It reads a local snapshot
+without starting the application or contacting ShadowMountPlus.
 
 Scripted UI run with screenshots (used by CI):
 

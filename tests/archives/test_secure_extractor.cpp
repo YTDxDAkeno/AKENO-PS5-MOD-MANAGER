@@ -2,6 +2,7 @@
 // Hostile and normal archives are written with libarchive's writer, then read back through
 // SecureExtractor.
 #include "Doctest.hpp"
+#include <algorithm>
 
 #include <optional>
 

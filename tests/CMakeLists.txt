@@ -51,3 +51,10 @@ target_link_libraries(akeno_tests PRIVATE akeno_core akeno_warnings akeno_sqlite
                                           PkgConfig::ARCHIVE)
 
 add_test(NAME akeno_tests COMMAND akeno_tests)
+
+if(NOT AKENO_TARGET_PS5)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME offline_overlay_diagnostics
+             COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover
+                     -s "${CMAKE_CURRENT_SOURCE_DIR}/tools" -v)
+endif()

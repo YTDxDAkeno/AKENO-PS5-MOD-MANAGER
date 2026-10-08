@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <iterator>
+#include <unistd.h>
 
 #include "ArchiveTestSupport.hpp"
 #include "TestSupport.hpp"
@@ -233,4 +234,140 @@ TEST_CASE("a PC mod may add files but never replace the game's own") {
     auto unknownFolder = f.request("cccc3333", {{"data/other.bin", "x", AE_IFREG, "", ""}});
     unknownFolder.pcSource = true;
     CHECK_FALSE(storeMod(unknownFolder, env).ok());
+}
+
+TEST_CASE("PC checks fail closed for missing roots, parent files and links") {
+    Fixture f;
+    auto env = f.env();
+    auto request = f.request("pc-check", {{"data/new.bin", "PC data", AE_IFREG, "", ""}});
+    request.pcSource = true;
+    request.gameFolder = (f.homebrew / "missing").string();
+    CHECK_FALSE(storeMod(request, env).ok());
+    fs::create_directories(request.gameFolder);
+    test::writeText(fs::path(request.gameFolder) / "data", "a file, not a directory");
+    CHECK_FALSE(storeMod(request, env).ok());
+    fs::remove(fs::path(request.gameFolder) / "data");
+    fs::create_directory_symlink(f.homebrew, fs::path(request.gameFolder) / "data");
+    CHECK_FALSE(storeMod(request, env).ok());
+    CHECK(loadTitleState(env, request.titleId)->mods.empty());
+}
+
+TEST_CASE("activation rechecks PC provenance after a game update adds a target") {
+    Fixture f;
+    auto env = f.env();
+    const auto game = f.homebrew / "game";
+    fs::create_directories(game);
+    auto request = f.request("pc-addition", {{"new.bin", "PC data", AE_IFREG, "", ""}});
+    request.pcSource = true;
+    request.gameFolder = game.string();
+    REQUIRE(storeMod(request, env).ok());
+    REQUIRE(loadTitleState(env, request.titleId)->mods[0].pcSource);
+    const TitleTarget target{request.titleId, false, false, game.string()};
+    REQUIRE(applyOverlay(target, env).ok());
+    test::writeText(game / "new.bin", "original update data");
+    CHECK_FALSE(applyOverlay(target, env).ok());
+    CHECK(readText(game / "new.bin") == "original update data");
+    CHECK(readText(f.backport() / "new.bin") == "PC data");
+}
+
+TEST_CASE("previously installed loader markers cannot bypass current activation checks") {
+    Fixture f;
+    auto env = f.env();
+    REQUIRE(storeMod(f.request("old-mod", {{"payload.bin", "data", AE_IFREG, "", ""}}), env).ok());
+    REQUIRE(applyOverlay(kTarget, env).ok());
+    // Simulate a valid old state that predates loader detection, retaining matching hashes.
+    const auto state = statePath(f.paths, kTarget.titleId);
+    std::string document = readText(state);
+    std::size_t pos = 0;
+    while ((pos = document.find("payload.bin", pos)) != std::string::npos) {
+        document.replace(pos, 11, "ModConfig.json");
+        pos += 14;
+    }
+    test::writeText(state, document);
+    fs::rename(f.paths.mods() / kTarget.titleId / "old-mod/files/payload.bin",
+               f.paths.mods() / kTarget.titleId / "old-mod/files/ModConfig.json");
+    auto applied = applyOverlay(kTarget, env);
+    REQUIRE_FALSE(applied.ok());
+    CHECK(applied.error().message.find("Reloaded-II") != std::string::npos);
+    CHECK(readText(f.backport() / "payload.bin") == "data");
+    REQUIRE(setVanilla(kTarget, env).ok());  // unsafe stored mods can still be deactivated
+    CHECK_FALSE(fs::exists(f.backport()));
+}
+
+TEST_CASE("ambiguous case across mods is refused before swapping the live overlay") {
+    Fixture f;
+    auto env = f.env();
+    REQUIRE(storeMod(f.request("a", {{"Data/a.bin", "A", AE_IFREG, "", ""}}), env).ok());
+    REQUIRE(applyOverlay(kTarget, env).ok());
+    REQUIRE(storeMod(f.request("b", {{"data/b.bin", "B", AE_IFREG, "", ""}}), env).ok());
+    CHECK_FALSE(applyOverlay(kTarget, env).ok());
+    CHECK(readText(f.backport() / "Data/a.bin") == "A");
+    CHECK_FALSE(fs::exists(f.backport() / "data/b.bin"));
+}
+
+TEST_CASE("failed Vanilla request preserves mod selections and owned overlay") {
+    Fixture f;
+    auto env = f.env();
+    REQUIRE(storeMod(f.request("a", {{"a.bin", "A", AE_IFREG, "", ""}}), env).ok());
+    REQUIRE(applyOverlay(kTarget, env).ok());
+    CHECK_FALSE(setVanilla({kTarget.titleId, true, false, {}}, env).ok());
+    CHECK(loadTitleState(env, kTarget.titleId)->enabledCount() == 1);
+    CHECK_FALSE(setVanilla({kTarget.titleId, false, false, "/outside/game"}, env).ok());
+    CHECK(loadTitleState(env, kTarget.titleId)->enabledCount() == 1);
+    CHECK(loadTitleState(env, kTarget.titleId)->overlayActive);
+    CHECK(readText(f.backport() / "a.bin") == "A");
+}
+
+TEST_CASE("514 files are not rejected by the installed-package limit for folder games") {
+    Fixture f;
+    auto env = f.env();
+    std::vector<test::EntrySpec> files;
+    for (int i = 0; i < 514; ++i) files.push_back({"data/f" + std::to_string(i), "x", AE_IFREG, "", ""});
+    REQUIRE(storeMod(f.request("many", files), env).ok());
+    auto applied = applyOverlay(kTarget, env);
+    REQUIRE(applied.ok());
+    CHECK(applied->files == 514);
+}
+
+TEST_CASE("journal write failure prevents an overlay swap") {
+    if (::geteuid() == 0) { MESSAGE("permission fault test requires an unprivileged runner"); return; }
+    Fixture f;
+    auto env = f.env();
+    REQUIRE(storeMod(f.request("a", {{"a.bin", "A", AE_IFREG, "", ""}}), env).ok());
+    REQUIRE(applyOverlay(kTarget, env).ok());
+    REQUIRE(storeMod(f.request("b", {{"b.bin", "B", AE_IFREG, "", ""}}), env).ok());
+    const auto originalPermissions = fs::status(f.paths.root).permissions();
+    env.storageQuery = [&](const fs::path&) -> Result<security::StorageSpace> {
+        fs::permissions(f.paths.root, fs::perms::owner_read | fs::perms::owner_exec);
+        return security::StorageSpace{f.available * 2, f.available};
+    };
+    auto applied = applyOverlay(kTarget, env);
+    fs::permissions(f.paths.root, originalPermissions);
+    CHECK_FALSE(applied.ok());
+    CHECK(readText(f.backport() / "a.bin") == "A");
+    CHECK_FALSE(fs::exists(f.backport() / "b.bin"));
+    CHECK(loadTitleState(env, kTarget.titleId)->overlayActive);
+}
+
+TEST_CASE("state save failure restores the previous overlay and retains recovery evidence") {
+    if (::geteuid() == 0) { MESSAGE("permission fault test requires an unprivileged runner"); return; }
+    Fixture f;
+    auto env = f.env();
+    REQUIRE(storeMod(f.request("a", {{"a.bin", "A", AE_IFREG, "", ""}}), env).ok());
+    REQUIRE(applyOverlay(kTarget, env).ok());
+    REQUIRE(storeMod(f.request("b", {{"b.bin", "B", AE_IFREG, "", ""}}), env).ok());
+    const auto stateDirectory = statePath(f.paths, kTarget.titleId).parent_path();
+    const auto originalPermissions = fs::status(stateDirectory).permissions();
+    env.storageQuery = [&](const fs::path&) -> Result<security::StorageSpace> {
+        fs::permissions(stateDirectory, fs::perms::owner_read | fs::perms::owner_exec);
+        return security::StorageSpace{f.available * 2, f.available};
+    };
+    auto applied = applyOverlay(kTarget, env);
+    fs::permissions(stateDirectory, originalPermissions);
+    CHECK_FALSE(applied.ok());
+    CHECK(readText(f.backport() / "a.bin") == "A");
+    CHECK_FALSE(fs::exists(f.backport() / "b.bin"));
+    CHECK(loadTitleState(env, kTarget.titleId)->overlayActive);
+    REQUIRE(f.journal->load().value().has_value());
+    CHECK(f.journal->load().value()->activeOverlayTouched);
 }

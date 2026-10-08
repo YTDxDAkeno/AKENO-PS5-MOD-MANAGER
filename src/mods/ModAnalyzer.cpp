@@ -149,12 +149,15 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
 
         const std::string lowerPath = strings::toLowerAscii(file.path);
         if (lowerPath.find("ue4ss") != std::string::npos) ue4ss = true;
-        // Reloaded-II (ModConfig.json) and Fluffy Mod Manager (modinfo.ini) mods are read and
-        // rebuilt by a PC loader at run time; copied into the game as they are, they replace
-        // files with PC data (seen crashing a PS5 on 2026-10-07).
+        // Loader markers establish an unsupported PC dependency, not the cause of a crash.
         const std::string base = lowerPath.substr(lowerPath.rfind('/') == std::string::npos ? 0 : lowerPath.rfind('/') + 1);
         if (base == "modconfig.json") loader = "Reloaded-II";
         if (base == "modinfo.ini" && loader.empty()) loader = "Fluffy Mod Manager";
+        for (const auto& part : components(lowerPath)) {
+            if (part == "dsts-loader" || part == "reloaded-ii" || part == "reloaded.mod.loader") {
+                loader = "Reloaded-II/dsts-loader";
+            }
+        }
         const std::string ext = lowerExtension(file.path);
         if (ext == "pak" || ext == "utoc" || ext == "ucas") ++paks;
         if (ext == "assets" || ext == "bundle" || ext == "resource") ++unityFiles;
@@ -203,8 +206,8 @@ ModAnalysis analyzeMod(const AnalysisInput& input) {
     if (!loader.empty()) {
         worsen(CompatibilityStatus::PcOnly);
         add(FindingLevel::Blocker,
-            "Made for " + loader + ", a PC mod loader that rebuilds the files when the game starts. Copied "
-            "into the game unchanged, they replace game data with PC data. This is a PC mod.");
+            "Contains markers for " + loader + ", an unsupported PC mod loader. Copying these files into a "
+            "PS5 overlay does not provide that loader or establish data-format compatibility.");
     }
     if (fakelib) {
         worsen(CompatibilityStatus::Incompatible);

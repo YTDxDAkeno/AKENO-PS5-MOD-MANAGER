@@ -49,6 +49,7 @@ struct InstalledMod {
     std::uint64_t bytes = 0;
     std::string installedAt;
     std::vector<StoredFile> files;
+    bool pcSource = false;  // retained so activation can repeat the no-replacement check
 };
 
 // mods/<TITLE_ID>/state.json
