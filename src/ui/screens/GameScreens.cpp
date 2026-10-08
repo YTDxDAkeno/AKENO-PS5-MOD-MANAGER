@@ -313,7 +313,7 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
         env.state.diagnostics.running ? "Cancel export" : "Export Diagnostics", "Back"};
     int buttonY = art.bottom() + 30;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
-        const Rect row{content.x, buttonY + i * 84, kIconSize, 70};
+        const Rect row{content.x, buttonY + i * 80, kIconSize, 70};
         const DetailAction kind = kDetailActions[static_cast<std::size_t>(i)];
         const bool enabled = kind == DetailAction::Back || kind == DetailAction::ExportDiagnostics || (kind == DetailAction::BrowseMods && entry != nullptr) ||
                              (kind == DetailAction::Vanilla && modsActive);
@@ -335,7 +335,7 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
             note = "Checking the Akeno Catalogue...";
         }
     }
-    canvas.drawText(note, {content.x, buttonY + 4 * 84, kIconSize, 36},
+    canvas.drawText(note, {content.x, buttonY + 4 * 80, kIconSize, 36},
                     TextStyle{FontRole::Small, theme::kTextDisabled, TextAlign::Left, false});
 
     const int infoX = content.x + kIconSize + 60;
