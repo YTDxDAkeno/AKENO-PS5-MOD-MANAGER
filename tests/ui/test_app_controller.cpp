@@ -350,3 +350,25 @@ TEST_CASE("a completed download is checked in staging and the result is kept") {
     REQUIRE(f.controller->removeDownload(queued->id).ok());
     CHECK_FALSE(std::filesystem::exists(mods::reportPath(f.context->paths(), queued->id)));
 }
+
+TEST_CASE("native diagnostic controller exports while SMP is offline and excludes mod mutations") {
+    ControllerFixture f;
+    f.controller->exportDiagnostics("PPSA24701");
+    REQUIRE(f.state().diagnostics.running);
+    CHECK(f.controller->installBusy());
+    f.controller->setGameVanilla("PPSA24701");
+    CHECK_FALSE(f.controller->cleanInterruptedOperation().ok());
+    f.controller->exportDiagnostics("PPSA24701"); // a second worker is not started
+    f.controller->cancelDiagnostics();
+    REQUIRE(pumpUntil(f.queue, [&] { return !f.state().diagnostics.running; }));
+    CHECK_FALSE(f.controller->installBusy());
+    REQUIRE_FALSE(f.state().diagnostics.lastExport.empty());
+    auto text = security::readFileBounded(f.state().diagnostics.lastExport, 16 * 1024 * 1024);
+    REQUIRE(text.ok());
+    auto report = json::parseBounded(*text, 16 * 1024 * 1024);
+    REQUIRE(report.ok());
+    CHECK((*report)["activationPerformed"] == false);
+    CHECK((*report)["cancelled"] == true);
+    CHECK(std::filesystem::is_empty(f.context->paths().mods()));
+    CHECK(std::filesystem::is_empty(f.context->paths().staging()));
+}

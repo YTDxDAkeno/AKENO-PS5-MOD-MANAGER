@@ -31,6 +31,7 @@ add_executable(akeno_tests
     mods/test_mod_analyzer.cpp
     mods/test_mod_check.cpp
     install/test_overlay_manager.cpp
+    diagnostics/test_diagnostic_export.cpp
     app/test_system_check.cpp
     app/test_command_line.cpp
 )

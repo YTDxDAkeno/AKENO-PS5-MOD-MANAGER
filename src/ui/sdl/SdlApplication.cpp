@@ -317,6 +317,7 @@ int runSdlApplication(app::AppContext& context, const app::CommandLine& commandL
             }
         }
         logger().info("ui", "user interface closing");
+        controller.cancelDiagnostics();
         // Workers may still reference the controller and the image service: stop them first.
         tasks.shutdown();
         mainQueue.drain(100000);

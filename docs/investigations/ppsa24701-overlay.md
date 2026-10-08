@@ -123,7 +123,7 @@ revisions; API service behavior does differ (including game version metadata).
 | Failed Vanilla can leave disabled selections with unchanged live overlay | `setVanilla` saved flags before mounted/root checks | Precheck mounted/recovery state and restore selections on failure; tests |
 | PKG count overestimates redirects | Baseline counts all files **and** directories | Keep conservative activation refusal, correct its message; offline tool models subtree redirects against explicit complete baseline |
 | Stop/mount guard is insufficient | UI uses cached game list; SMP [`game_to_json`](https://github.com/drakmor/ShadowMountPlus/blob/d7e35e6ce90abc6f9d0880ff40c2a5cc1fbfa075/src/sm_api_service.c#L1075) always reports mounted=false for installed PKGs | Documented unresolved. No mount/launch lock or reliable PKG running-state proof added; do not treat false as proof a title is stopped |
-| Effective backport selection is unverified | Akeno never resolves all configured candidates against upstream precedence | Documented unresolved. Offline diagnostics do not probe a console or claim which directory SMP selected |
+| Effective backport selection is unverified | Akeno never resolves all configured candidates against upstream precedence | Native read-only export now predicts selection using beta4 scan-root precedence and local filesystem evidence; unknown on missing/ambiguous evidence. Installer remains fixed-root; no mount or consumption proof |
 
 These are code defects/gaps, **not established causes of the reported shutdown**.
 The host regression with 514 benign files checks that the folder path does not
@@ -148,8 +148,10 @@ inherit the PKG limit; it is not a console capacity or stability test.
 
 ## Safe next evidence
 
-Use the [offline report tool](../overlay-diagnostics.md) on a preserved copy of
-the original overlay. Also provide the exact Akeno build/ELF hash, its install
+Use [Export Diagnostics on PS5](../overlay-diagnostics.md) for the current stored
+mods, overlay and accessible physical source inventory. It does not activate
+anything. Do not restore or reactivate the crashing tree for collection. If only
+a preserved snapshot is available, the optional host helper can inventory it. Also provide the exact Akeno build/ELF hash, its install
 log and `state.json` mappings, the original archive SHA-256, the vanilla
 PPSA24701 manifest and exact `contentVersion`, and failing-run crash/panic/SMP
 logs if already available. Record which run each log represents. Read-only
@@ -158,3 +160,24 @@ would resolve selection questions; omit credentials and unrelated game contents.
 
 No additional console launch, destructive bisect, loader enablement, modification
 of original game files, or hardware verification is part of this PR.
+
+## Native export follow-up and documentation correction
+
+The earlier `docs/shadowmount.md` contract incorrectly said Akeno already
+resolved effective scan roots and blocked on higher-priority foreign backports.
+That was intended behavior, not the implementation. The corrected contract
+describes the fixed-root installer and the separate native diagnostic model.
+The model uses the longest physical owning root, custom roots **instead of**
+defaults when present, skips managed image roots for backports and retains the
+explicit `/data/homebrew` fallback. Unsupported versions, unavailable source
+ownership or unreadable candidates yield `unknown`. API/candidate observations
+are rechecked, but SMP's cached owner and actual mount state remain unobservable.
+
+Native schema 2 reports carry build identity, detected firmware, game metadata,
+stored mappings, SHA-256 inventories, loader dependencies, allowlisted live/disk
+configuration and bounded available logs. Folder inventories never copy game
+assets; PKG/image runtime paths are not treated as vanilla. Host filesystem/API
+fixtures cover precedence, missing evidence, tampering, links, bounds, log
+redaction, cancellation, UI invocation and exclusion of mutating API routes.
+These checks do not validate console behavior or diagnose a kernel mechanism.
+The original crash manifest and failing-run trace remain missing.

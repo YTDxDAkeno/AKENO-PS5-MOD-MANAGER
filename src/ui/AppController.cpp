@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/ui/AppController.hpp"
+#include "akeno/diagnostics/DiagnosticExport.hpp"
 
 #include <algorithm>
 #include <mutex>
@@ -143,6 +144,7 @@ AppController::AppController(app::AppContext& context, TaskRunner& tasks, MainTh
 }
 
 AppController::~AppController() {
+    diagnosticsCancel_.cancel();
     alive_->store(false);
     context_.downloads().setListener(nullptr);
     context_.downloads().stop();
@@ -262,18 +264,68 @@ Status AppController::saveSettings(const database::Settings& settings) {
     return {};
 }
 
-Result<std::string> AppController::exportDiagnostics() {
-    const app::SystemReport* report = state_.systemCheck.report ? &*state_.systemCheck.report : nullptr;
-    auto file = context_.exportDiagnostics(report);
-    if (!file) {
-        return std::move(file).error();
+void AppController::exportDiagnostics(const std::string& titleId) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
+        addNotice("Wait for the current operation, or cancel the diagnostic export.", ToastKind::Warning);
+        return;
     }
-    return file->string();
+    if (!titleId.empty() && !games::isValidTitleId(titleId)) {
+        addNotice("The diagnostic title ID is invalid.", ToastKind::Error); return;
+    }
+    diagnostics::Request request;
+    request.paths = context_.paths();
+    request.titleId = titleId;
+    request.cachedGames = allGames_;
+    request.firmware = context_.platform().firmware();
+    request.logFiles = {context_.paths().logs() / "akeno.log", context_.paths().logs() / "akeno.log.1"};
+    for (int i = 2; i <= 4; ++i) request.logFiles.push_back(context_.paths().logs() / ("akeno.log." + std::to_string(i)));
+    if (context_.platform().isConsole()) {
+        request.smpConfigFile = "/data/shadowmount/config.ini";
+        request.logFiles.emplace_back("/data/shadowmount/debug.log");
+        request.logFiles.emplace_back("/data/shadowmount/debug.log.1");
+    }
+    const auto port = static_cast<std::uint16_t>(state_.settings.shadowMountPort);
+    diagnosticsCancel_ = CancellationToken{};
+    const auto cancel = diagnosticsCancel_;
+    const auto alive = alive_;
+    state_.diagnostics.running = true;
+    state_.diagnostics.progress = "Starting read-only diagnostic export";
+    addNotice("Exporting diagnostics. No mods will be activated.", ToastKind::Info);
+    tasks_.submit([this, request, port, cancel, alive] {
+        Result<std::filesystem::path> result = makeError(ErrorCode::Internal, "Diagnostic export failed");
+        try {
+            auto client = shadowmount::ShadowMountClient::create(context_.http(), {"127.0.0.1", port});
+            result = client ? diagnostics::exportReport(request, context_.fs(), *client, &cancel,
+                [this, alive](std::string progress) {
+                    mainQueue_.post([this, alive, progress = std::move(progress)] {
+                        if (alive->load()) state_.diagnostics.progress = progress;
+                    });
+                }) : Result<std::filesystem::path>(client.error());
+        } catch (const std::exception&) {
+            // A malformed input or allocation failure must not leave the UI busy forever.
+            result = makeError(ErrorCode::Internal, "Diagnostic export failed while reading or encoding evidence");
+        }
+        mainQueue_.post([this, alive, result = std::move(result), cancelled = cancel.cancelled()] {
+            if (!alive->load()) return;
+            state_.diagnostics.running = false;
+            state_.diagnostics.progress = result ? (cancelled ? "Cancelled; partial report saved" : "Report saved; check completeness fields")
+                                                 : "Export failed: " + result.error().message;
+            if (result) state_.diagnostics.lastExport = result->string();
+            addNotice(result ? "Diagnostics written to " + result->string() : state_.diagnostics.progress,
+                      result ? ToastKind::Success : ToastKind::Error);
+        });
+    });
+}
+
+void AppController::cancelDiagnostics() {
+    diagnosticsCancel_.cancel();
+    if (state_.diagnostics.running) state_.diagnostics.progress = "Cancelling; preserving partial evidence";
 }
 
 std::vector<logging::LogRecord> AppController::recentLogs() { return context_.logRing().snapshot(); }
 
 Status AppController::cleanInterruptedOperation() {
+    if (state_.diagnostics.running) return makeError(ErrorCode::Busy, "Wait for the diagnostic export before recovery cleanup.");
     if (!state_.recovery) {
         return {};
     }
@@ -703,7 +755,7 @@ Status AppController::removeDownload(const std::string& id) {
 
 void AppController::checkDownload(const std::string& id, bool again) {
     ModCheckView& view = state_.check;
-    if (installing_) {
+    if (installing_ || state_.diagnostics.running) {
         addNotice("Wait until the mod change has finished.", ToastKind::Warning);
         return;
     }
@@ -815,7 +867,7 @@ std::string installUnavailableReason(const AppViewState& state) {
 }  // namespace
 
 void AppController::installChecked(const std::string& id) {
-    if (installing_ || state_.check.running) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }
@@ -893,7 +945,7 @@ void AppController::installChecked(const std::string& id) {
 }
 
 void AppController::setGameVanilla(const std::string& titleId) {
-    if (installing_ || state_.check.running) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }
@@ -999,7 +1051,7 @@ install::TitleTarget AppController::targetFor(const std::string& titleId) const 
 }
 
 void AppController::runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work) {
-    if (installing_ || state_.check.running) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }

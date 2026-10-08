@@ -89,7 +89,10 @@ public:
         state_.settings = settings;
         return {};
     }
-    Result<std::string> exportDiagnostics() override { return std::string("/data/akeno-mod-manager/logs/d.txt"); }
+    std::vector<std::string> diagnosticTitles;
+    int diagnosticCancels = 0;
+    void exportDiagnostics(const std::string& titleId = {}) override { diagnosticTitles.push_back(titleId); }
+    void cancelDiagnostics() override { ++diagnosticCancels; }
     std::vector<logging::LogRecord> recentLogs() override { return logs; }
     Status cleanInterruptedOperation() override {
         ++cleanups;

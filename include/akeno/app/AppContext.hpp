@@ -71,10 +71,6 @@ public:
     // Creates the catalogue provider for `url` (https, or http on loopback).
     void configureCatalogue(const std::string& url);
 
-    // Writes logs/diagnostic-<timestamp>.txt: versions, settings, the last system report, the
-    // interrupted operation (if any) and recent log lines. Secrets are already redacted.
-    Result<std::filesystem::path> exportDiagnostics(const SystemReport* lastReport);
-
     // Writes a text report into logs/ and returns its path.
     Result<std::filesystem::path> writeReport(std::string_view prefix, std::string_view text);
 

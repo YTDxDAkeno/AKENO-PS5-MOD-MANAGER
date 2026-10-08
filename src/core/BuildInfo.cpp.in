@@ -6,6 +6,7 @@ namespace akeno::build {
 
 std::string_view version() { return "@AKENO_VERSION_STRING@"; }
 std::string_view gitRevision() { return "@AKENO_GIT_REVISION@"; }
+std::string_view sourceFingerprint() { return "@AKENO_SOURCE_SHA256@"; }
 std::string_view target() { return "@AKENO_TARGET_NAME@"; }
 std::string_view compiler() { return "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@"; }
 

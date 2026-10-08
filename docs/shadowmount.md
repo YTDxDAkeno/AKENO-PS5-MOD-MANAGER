@@ -86,59 +86,56 @@ over the game at launch:
   This is code injection, which the safety model forbids.
 * SMP `chmod`s everything under `backports/` to `0777` on UFS/BFS.
 
-### 4.1 Akeno's contract (Phase 5)
+### 4.1 Implemented Akeno contract and diagnostic prediction
 
-Implemented in `src/install/OverlayManager.cpp` (0.2.0-alpha). Simplification of
-point 1: Akeno uses `/data/homebrew/backports/<TITLE_ID>` and refuses games outside
-`/data/homebrew` (installed packages excepted) instead of computing other scan paths.
+`src/install/OverlayManager.cpp` publishes only to
+`/data/homebrew/backports/<TITLE_ID>` and refuses non-PKG sources outside
+`/data/homebrew`. **The installer does not resolve effective scan roots or block
+on a higher-priority foreign candidate.** Earlier text in this document described
+that intended behavior as implemented; the investigation correctly identified
+the fixed-root limitation. The native exporter now models selection separately;
+it does not change installation destinations or authorize activation.
 
-1. **Where.** Akeno targets the backport directory that SMP will actually
-   use for the title. It computes it the same way SMP does: the owning scan
-   path, then scan paths in order (from `POST /api/v1/settings` plus SMP
-   defaults), with `/data/homebrew/backports/<TITLE_ID>` as fallback. If a
-   *higher-priority* backport directory exists that Akeno does not own, the
-   overlay would be ignored. Installation is blocked with an explanation.
-2. **Ownership.** Akeno only replaces a backport directory it created. It
-   records the directory's device and inode plus a content manifest in
-   `mods/<TITLE_ID>/state.json` (implemented in 0.2.0-alpha). **No marker files are placed inside the overlay.** They
-   would be visible to the game and would count against the 256-redirect
-   limit.
-3. **Existing user backports** (e.g. firmware backports with `fakelib`):
-   never touched automatically. A later release may offer "adopt as base
-   layer" with explicit confirmation. That would move the directory (rename
-   on the same filesystem) into `overlays/<TITLE_ID>/base/`, include it
-   unmodified as the lowest layer, and restore it exactly on "Vanilla" or
-   on uninstall.
-4. **Building.** The merged tree is built in
-   `/data/akeno-mod-manager/staging/apply-<TITLE_ID>-<time>/next/` (0.2.0-alpha;
-   staging, so an interrupted build is cleaned up by the recovery prompt). Regular
-   files only. Hard links from `mods/` when the filesystem supports them
-   (detected at startup), copies otherwise. **On the first test console
-   (firmware 12.20) hard links did not work in Akeno's folder**, so copies
-   are the expected case: an installed mod then needs its size twice (stored
-   copy and overlay). The dry-run plan states the extra space. Source files are verified
-   against their recorded SHA-256 before linking. A game write through a
-   read-write unionfs could have changed them.
-5. **Validation before activation:**
-   * no symlinks, devices, FIFOs, sockets, or names `fakelib`/`fakelib2`
-     at the top level;
-   * every path ≤ 1023 bytes, depth ≤ 64;
-   * PKG titles: computed redirect count ≤ the limit (Akeno warns at 90 %
-     and refuses above the limit). Without visibility of `app0` the count is
-     the safe upper bound "regular files + directories without files";
-   * the title is **not** mounted/running (`mounted == false`).
-6. **Activation** (same filesystem, journaled in `operation_state.json`):
-   1. `rename(backport → overlays/<TITLE_ID>/overlay.previous)` if an
-      Akeno-owned backport exists;
-   2. `rename(overlay.next → backport)`;
-   3. fsync parent directories and commit the journal.
-   A crash between steps 1 and 2 leaves **no** backport, which is vanilla
-   and safe. Recovery then either finishes step 2 or restores step 1.
-7. **Vanilla.** Removing Akeno's backport directory (renaming it away
-   first, then deleting) restores the unmodified game. The Vanilla profile
-   does exactly this. It needs no network access and no reinstall.
-8. **Timing.** SMP applies the backport at the next launch. Changes made
-   while the game is running are refused.
+1. **Selection diagnostics.** For the released SMP **1.7beta4**, API version 1,
+   use a fresh game list and `settings.scan_paths` / `scan_path_count`. Nonempty
+   custom roots replace defaults; empty custom roots use the release defaults.
+   Managed image roots are appended but skipped as backport candidates. For a
+   physical folder/image source, infer the longest matching owning root with a
+   path-component boundary, then try other roots in order and the explicit
+   `/data/homebrew` fallback. Installed PKGs have no inferred owner. The first
+   existing directory wins. An inaccessible candidate, symbolic-link ancestor,
+   unsupported version, internal image source or incomplete settings produces
+   `unknown`. The exporter rechecks candidates and API evidence after inventory.
+   SMP's internal cached owner and image-to-physical-path mapping are not exposed;
+   this is a prediction under release rules, not proof of the live mount. See
+   [native diagnostics](overlay-diagnostics.md) for report fields and limits.
+2. **Ownership.** Only Akeno-owned backports may be replaced. Device/inode identity
+   and per-file manifests are stored in `mods/<TITLE_ID>/state.json`. No marker
+   files are placed inside the overlay. Foreign backports are not adopted.
+3. **Building.** `staging/apply-<TITLE_ID>-<time>/next/` contains independent copies
+   of enabled stored mods in order. Source SHA-256 and compatibility are checked
+   again; exact-path replacements use the last enabled mod. Ambiguous casing is
+   refused. Overlay publication does not use hard links.
+4. **Validation.** Regular files only; path length/depth constraints, reserved
+   system paths, PC loaders and unsafe replacements are checked. PKG activation
+   conservatively counts all files and directories against 256; this can refuse
+   a tree SMP could redirect with fewer subtree rules. It is not a unionfs limit.
+   Cached `mounted` blocks known mounted titles but is not a launch lock;
+   beta4 always reports `mounted=false` for installed PKGs, so false does not
+   establish that a game is stopped.
+5. **Publication/rollback.** After persisting the operation journal, the old
+   owned backport is renamed into staging as `previous`, then `next` is renamed
+   to the fixed destination on the same filesystem. Failure handling attempts
+   to restore both directory and saved ownership state. If restoration fails,
+   staging/journal evidence is retained. Recovery cleanup is not a guarantee of
+   automatic restoration after power loss. Original game files are never written.
+6. **Vanilla.** Disables stored selections and removes only Akeno's owned
+   published directory, with selection rollback on failure. It does not remove
+   foreign higher-priority backports or unmount an already applied layer.
+   Absence of Akeno's directory alone cannot prove an unmodified live game.
+7. **Timing.** SMP normally applies backports at launch. Akeno publication and
+   diagnostic export never constitute proof that SMP mounted the tree or that
+   the game consumed any file. The export invokes no activation or launch route.
 
 ### 4.2 Why not other mechanisms
 
@@ -154,10 +151,9 @@ point 1: Akeno uses `/data/homebrew/backports/<TITLE_ID>` and refuses games outs
   The second hardware test logged `ENOENT` for the new name although the
   folder and the source file exist. If hard links stay unavailable, the
   question below is moot and overlays use copies.
-* Does a hard-linked file in the backport behave identically to a regular
-  file for both unionfs and NSFS redirects?
+* Independent copies are used for overlays; no hard-link behavior is assumed.
 * Does the PS5 build of the first target game (Stellar Blade) load
   additional `.pak`/`.utoc`/`.ucas` files from a `~mods` directory, or
   only replacements of existing files?
 * Does the SMP permission repair run on Akeno-published directories before
-  the next launch? This affects only timing, not safety.
+  the next launch? The effect on launch behavior remains unverified.

@@ -163,7 +163,14 @@ struct Notice {
     ToastKind kind = ToastKind::Info;
 };
 
+struct DiagnosticView {
+    bool running = false;
+    std::string progress;
+    std::string lastExport;
+};
+
 struct AppViewState {
+    DiagnosticView diagnostics;
     SystemCheckView systemCheck;
     LibraryView library;
     CatalogView catalog;
@@ -186,7 +193,8 @@ public:
     virtual void runSystemCheck() = 0;
     virtual void refreshLibrary() = 0;
     virtual Status saveSettings(const database::Settings& settings) = 0;
-    virtual Result<std::string> exportDiagnostics() = 0;
+    virtual void exportDiagnostics(const std::string& titleId = {}) = 0;
+    virtual void cancelDiagnostics() = 0;
     virtual std::vector<logging::LogRecord> recentLogs() = 0;
     // Deletes the staging data of an interrupted operation and clears the journal.
     virtual Status cleanInterruptedOperation() = 0;

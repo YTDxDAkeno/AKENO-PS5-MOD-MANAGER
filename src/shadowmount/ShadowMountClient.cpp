@@ -162,6 +162,30 @@ Result<std::vector<std::string>> parseSettingsScanPaths(std::string_view body) {
     return paths;
 }
 
+Result<json::Json> ShadowMountClient::diagnosticSettings() {
+    auto body = postJson("/api/v1/settings", "{}", limits::kMaxJsonSmallResponse, kApiTimeoutMs);
+    if (!body) return body.error();
+    auto parsed = parseEnvelope(body.value(), limits::kMaxJsonSmallResponse);
+    if (!parsed) return parsed.error();
+    json::Json result = json::Json::object();
+    // Never export arbitrary API keys, URLs or unknown configuration values.
+    for (const auto* key : {"scan_paths", "scan_path_count", "debug", "quiet_mode", "api_enabled",
+                            "allow_lan_access", "update_emulators", "auto_update_ampr",
+                            "auto_remove_missing_games", "auto_remove_missing_delay_seconds",
+                            "fan_target_temperature"}) {
+        if (!parsed->contains(key)) continue;
+        const auto& value = (*parsed)[key];
+        const std::string_view name(key);
+        if (name == "scan_paths") {
+            if (!value.is_array() || value.size() > 128) continue;
+            bool valid = true;
+            for (const auto& path : value) if (!path.is_string() || path.get_ref<const std::string&>().size() >= 1024) valid = false;
+            if (valid) result[key] = value;
+        } else if (value.is_boolean() || value.is_number_integer()) result[key] = value;
+    }
+    return result;
+}
+
 Result<ShadowMountClient> ShadowMountClient::create(network::IHttpClient& http, Endpoint endpoint) {
     if (!network::isLoopbackHost(endpoint.host)) {
         return makeError(ErrorCode::SafetyViolation,

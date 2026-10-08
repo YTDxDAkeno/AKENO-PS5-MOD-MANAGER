@@ -1,4 +1,83 @@
-# Offline overlay diagnostics
+# Read-only overlay diagnostics
+
+## Export directly on PS5
+
+Open **Games → game details → Export Diagnostics** to collect one title, including
+a title with no installed mods. **Settings → Export Diagnostics** collects titles
+with stored mod state (up to 32); the log and system-check screens also offer
+export. No PC, Python, internet download, activation or game launch is required.
+Only local ShadowMountPlus read APIs are queried. If SMP is unavailable, local
+manifests/logs can still be exported, with unavailable facts explicitly marked.
+
+The UI remains responsive and shows progress and the saved path. Select **Cancel
+export** to preserve a partial report. While exporting, Akeno blocks concurrent
+installation, overlay changes, checks and recovery cleanup. This is not a lock
+on other applications or SMP. Cancellation cannot interrupt an in-flight local
+HTTP request or blocked filesystem call immediately. Avoid changing the input
+trees while collecting evidence. Reading may update filesystem access times.
+
+Reports are JSON files under
+`/data/akeno-mod-manager/logs/diagnostics/diagnostic-<title-or-installed>-*.json`
+(or the configured app data root). No report is automatically uploaded. Only
+the new report is written; game/mod files, state and recovery journals are read.
+The existing application may continue writing its normal log.
+
+Native report schema **2** contains:
+
+* Detected firmware (or `known: false`), title ID, game version and source,
+  Akeno version, full Git revision, source/configuration SHA-256, compiler and
+  target. The fingerprint identifies compiled source inputs including dirty
+  edits; it is not the distributed ELF checksum. Match release `SHA256SUMS`
+  separately when binary identity matters.
+* Stored-mod mappings, recorded ownership/activation state, manifest paths,
+  types, sizes and streamed SHA-256 for stored mods and the published overlay.
+  Mapping integrity is compared to observed hashes/sizes. Recorded activation
+  state is not an observation of a live mount.
+* Path validity, case conflicts, special-file/link refusals, absolute SMP path
+  limits, PC loader names/signatures and bounded `ModConfig.json`
+  `ModDependencies` detection. Compatibility is `blocked` or `unknown`, never
+  certified safe; this adds no loader or asset conversion support.
+* A physical folder game inventory when SMP supplies the source and its
+  `sce_sys/param.json` matches the title. Only paths, sizes and hashes are
+  exported, never copyrighted game asset bytes. Version fallback uses that
+  metadata. This source is not authenticated against retail/update checksums.
+  Runtime mount paths, internal mounted images and installed PKG `app0` are
+  not accepted as vanilla; these remain unavailable without mounting. Exact
+  case/type and available hashes are compared with overlay entries. Missing
+  paths in an incomplete inventory remain unknown.
+* SMP version, allowlisted live settings, and relevant allowlisted values from
+  `/data/shadowmount/config.ini`. Disk configuration is explicitly **not live
+  evidence**; image rules, mount flags and internal owner state are not exposed
+  by the beta4 API. Disk values never drive the selection prediction.
+* Selection status `predicted-akeno`, `predicted-other`, `none-observed`, or
+  `unknown`, with inspected candidates and inferred owning root. The model is
+  pinned to upstream release `d7e35e6ce90abc6f9d0880ff40c2a5cc1fbfa075`.
+  Custom/default scan precedence and the fallback follow upstream; unreadable
+  higher-priority paths fail closed. Changed/unavailable final evidence clears
+  the prediction. Neither mount nor game consumption is observed.
+* Available tails of Akeno logs (current and rotations 1–4), SMP `debug.log`
+  and `.1`, plus a read-only journal summary. Missing logs are reported.
+  Known secret patterns are redacted, but paths and log text can still contain
+  private information: review before sharing. No kernel/panic trace collection
+  is asserted, and successful-run logs must not be labelled crash evidence.
+
+Bounds are shared across each export: 50,000 filesystem entries, 64 GiB hashed,
+300 seconds of traversal, 64 levels, 256 stored mods per title, bounded state
+and configuration reads, and 256 KiB per log tail. Exceeding a byte budget leaves
+null hashes with reasons; cancellation/time/entry limits leave partial trees.
+Check `complete`, `hashesComplete`, `hashStatus`, findings and top-level limit
+flags. Directory enumeration and hash checks detect some concurrent changes,
+but do not create an atomic snapshot. Symlinks in any ancestor, nested devices,
+and special files are refused. This can make legitimate aliases unavailable.
+Reports larger than 64 MiB fail instead of producing an unbounded export. Export
+one title at a time for the most useful comparison.
+
+The installer still publishes to its fixed root: the diagnostic prediction is
+not a new installation policy. `activationPerformed`, `gameLaunchPerformed`,
+`gameAssetsExported` and `hardwareVerified` remain false. This feature has no
+PS5 runtime validation yet and does not establish a cause or fix for the shutdown.
+
+## Optional Linux snapshot helper
 
 Run this **on a Linux host**, on an already copied overlay snapshot. No console
 connection is needed. Do not point it at a live/mutating overlay. This tool never
@@ -85,7 +164,8 @@ against the baseline; absent version evidence is still a limitation.
 
 See [the evidence and lifecycle audit](investigations/ppsa24701-overlay.md).
 Do not re-enable the 514-file overlay or add a PC loader to gather evidence.
-Useful next inputs are a manifest/report of the preserved crashing overlay,
+Use the native PS5 export first; the Linux helper is optional. Useful next inputs
+are a manifest/report of the preserved crashing overlay,
 the exact Akeno ELF/build hash, the vanilla PS5 title/update manifest, and logs
 captured from the original failing run if already available. Preserve existing
 state/journal files before attempting recovery; do not delete a foreign backport.

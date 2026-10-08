@@ -50,13 +50,14 @@ public:
     void runSystemCheck() override;
     void refreshLibrary() override;
     Status saveSettings(const database::Settings& settings) override;
-    Result<std::string> exportDiagnostics() override;
+    void exportDiagnostics(const std::string& titleId = {}) override;
+    void cancelDiagnostics() override;
     std::vector<logging::LogRecord> recentLogs() override;
     Status cleanInterruptedOperation() override;
     void postponeRecovery() override;
     std::string gameIconKey(const games::GameInfo& game, int size) override;
     std::string remoteImageKey(const std::string& url, int width, int height) override;
-    void requestQuit() override { quit_ = true; }
+    void requestQuit() override { cancelDiagnostics(); quit_ = true; }
 
     void loadCatalogGames(bool forceRefresh) override;
     void loadModList(const providers::SearchQuery& query) override;
@@ -72,7 +73,7 @@ public:
     void installChecked(const std::string& downloadId) override;
     void setGameVanilla(const std::string& titleId) override;
     InstalledModsSummary installedMods(const std::string& titleId) override;
-    bool installBusy() const override { return installing_; }
+    bool installBusy() const override { return installing_ || state_.diagnostics.running; }
     std::vector<InstalledModRow> listInstalledMods() override;
     void setInstalledModEnabled(const std::string& titleId, const std::string& downloadId, bool enabled) override;
     void removeInstalledMod(const std::string& titleId, const std::string& downloadId) override;
@@ -101,6 +102,7 @@ private:
 
     app::AppContext& context_;
     TaskRunner& tasks_;
+    CancellationToken diagnosticsCancel_;
     MainThreadQueue& mainQueue_;
     IImageLoader* images_;
     AppViewState state_;

@@ -347,7 +347,8 @@ TEST_CASE("log viewer shows records and exports diagnostics") {
     screen.render(canvas, h.env);
     CHECK(canvas.hasText("11:22:33  [startup] hello"));
     screen.handle(Action::Options, h.env);
-    CHECK(h.toasted("Diagnostic log written"));
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles.front().empty());
     CHECK(screen.handle(Action::Back, h.env).kind == NavRequest::Kind::Pop);
 }
 
@@ -413,4 +414,38 @@ TEST_CASE("installed mods can be turned off, removed, and a game switched to Van
     screen.update(h.env);
     REQUIRE(h.commands.vanillas.size() == 1);
     CHECK(h.commands.vanillas[0] == "PPSA24701");
+}
+
+TEST_CASE("diagnostic export is available per game without enabling mods") {
+    test::UiHarness h;
+    games::GameInfo game;
+    game.titleId = "PPSA24701";
+    game.name = "Diagnostic game";
+    h.state.library.games.push_back(game);
+    GameDetailScreen screen(game.titleId);
+    test::RecordingCanvas canvas;
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("Export Diagnostics"));
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles[0] == game.titleId);
+    CHECK(h.commands.vanillas.empty());
+    h.state.diagnostics.running = true;
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.diagnosticCancels == 1);
+}
+
+TEST_CASE("settings diagnostic export starts asynchronously and can be cancelled") {
+    test::UiHarness h;
+    SettingsScreen screen;
+    for (int i = 0; i < static_cast<int>(SettingsScreen::Item::ExportDiagnostics); ++i)
+        screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles[0].empty());
+    h.state.diagnostics.running = true;
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.diagnosticCancels == 1);
 }

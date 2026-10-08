@@ -35,7 +35,7 @@ endif()
 set(AKENO_GIT_REVISION "unknown")
 find_package(Git QUIET)
 if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
                     OUTPUT_VARIABLE AKENO_GIT_REVISION
                     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -44,6 +44,21 @@ if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
         set(AKENO_GIT_REVISION "unknown")
     endif()
 endif()
+# Fingerprint actual compile inputs, including uncommitted code, independently of Git labels.
+file(GLOB_RECURSE AKENO_BUILD_INPUTS CONFIGURE_DEPENDS
+     "${CMAKE_SOURCE_DIR}/src/*" "${CMAKE_SOURCE_DIR}/include/*"
+     "${CMAKE_SOURCE_DIR}/cmake/*" "${CMAKE_SOURCE_DIR}/third_party/*"
+     "${CMAKE_SOURCE_DIR}/assets/*")
+list(APPEND AKENO_BUILD_INPUTS "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
+list(SORT AKENO_BUILD_INPUTS)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AKENO_BUILD_INPUTS})
+set(AKENO_SOURCE_HASH_INPUT "${CMAKE_CXX_COMPILER_ID};${CMAKE_CXX_COMPILER_VERSION};${CMAKE_BUILD_TYPE};${CMAKE_CXX_FLAGS};${CMAKE_CXX_FLAGS_DEBUG};${CMAKE_CXX_FLAGS_RELEASE};${CMAKE_CXX_FLAGS_RELWITHDEBINFO};${CMAKE_EXE_LINKER_FLAGS};${AKENO_TARGET_NAME};${AKENO_BUILD_APP};${AKENO_BUILD_TESTS};${AKENO_SANITIZE}")
+foreach(input IN LISTS AKENO_BUILD_INPUTS)
+    file(SHA256 "${input}" input_hash)
+    file(RELATIVE_PATH input_name "${CMAKE_SOURCE_DIR}" "${input}")
+    string(APPEND AKENO_SOURCE_HASH_INPUT "\n${input_name}:${input_hash}")
+endforeach()
+string(SHA256 AKENO_SOURCE_SHA256 "${AKENO_SOURCE_HASH_INPUT}")
 configure_file(src/core/BuildInfo.cpp.in "${CMAKE_BINARY_DIR}/generated/BuildInfo.cpp" @ONLY)
 
 # ------------------------------------------------------------------------- warnings
@@ -116,6 +131,7 @@ add_library(akeno_core STATIC
     src/mods/ModAnalyzer.cpp
     src/mods/ModCheck.cpp
     src/install/OverlayManager.cpp
+    src/diagnostics/DiagnosticExport.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp

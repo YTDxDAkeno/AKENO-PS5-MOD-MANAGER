@@ -210,9 +210,9 @@ void GameLibraryScreen::render(ICanvas& canvas, UiEnv& env) {
 
 namespace {
 
-enum class DetailAction { BrowseMods, Vanilla, Back };
-constexpr std::array<DetailAction, 3> kDetailActions{DetailAction::BrowseMods, DetailAction::Vanilla,
-                                                      DetailAction::Back};
+enum class DetailAction { BrowseMods, Vanilla, ExportDiagnostics, Back };
+constexpr std::array<DetailAction, 4> kDetailActions{DetailAction::BrowseMods, DetailAction::Vanilla,
+                                                      DetailAction::ExportDiagnostics, DetailAction::Back};
 
 }  // namespace
 
@@ -274,6 +274,10 @@ NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
                 return NavRequest::push(std::make_unique<ConfirmScreen>("Switch to Vanilla?", std::move(lines),
                                                                         "Vanilla", confirmVanilla_.callback(), false));
             }
+            case DetailAction::ExportDiagnostics:
+                if (env.state.diagnostics.running) env.commands.cancelDiagnostics();
+                else env.commands.exportDiagnostics(titleId_);
+                break;
             case DetailAction::Back:
                 return NavRequest::pop();
         }
@@ -305,12 +309,13 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     if (entry != nullptr) browseLabel = strings::concat("Browse mods (", entry->modCount, ")");
     const InstalledModsSummary mods = env.commands.installedMods(titleId_);
     const bool modsActive = mods.overlayActive || mods.enabled > 0;
-    const std::array<std::string, 3> labels{browseLabel, modsActive ? "Vanilla (mods off)" : "Vanilla", "Back"};
+    const std::array<std::string, 4> labels{browseLabel, modsActive ? "Vanilla (mods off)" : "Vanilla",
+        env.state.diagnostics.running ? "Cancel export" : "Export Diagnostics", "Back"};
     int buttonY = art.bottom() + 30;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         const Rect row{content.x, buttonY + i * 84, kIconSize, 70};
         const DetailAction kind = kDetailActions[static_cast<std::size_t>(i)];
-        const bool enabled = kind == DetailAction::Back || (kind == DetailAction::BrowseMods && entry != nullptr) ||
+        const bool enabled = kind == DetailAction::Back || kind == DetailAction::ExportDiagnostics || (kind == DetailAction::BrowseMods && entry != nullptr) ||
                              (kind == DetailAction::Vanilla && modsActive);
         draw::button(canvas, row, labels[static_cast<std::size_t>(i)], actions_.focus() == i, enabled);
     }
@@ -330,7 +335,7 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
             note = "Checking the Akeno Catalogue...";
         }
     }
-    canvas.drawText(note, {content.x, buttonY + 3 * 84, kIconSize, 36},
+    canvas.drawText(note, {content.x, buttonY + 4 * 84, kIconSize, 36},
                     TextStyle{FontRole::Small, theme::kTextDisabled, TextAlign::Left, false});
 
     const int infoX = content.x + kIconSize + 60;
@@ -362,8 +367,10 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
         y += 54;
     }
     drawWrappedText(canvas,
-                    "Mods can be browsed in this version but not yet downloaded or installed. Akeno will never "
-                    "modify the original game files; mods will be applied through ShadowMountPlus overlays.",
+                    env.state.diagnostics.progress.empty()
+                        ? "Export Diagnostics reads stored mods, the overlay and accessible original folder files. "
+                          "It does not activate mods or launch the game. No game assets are exported."
+                        : env.state.diagnostics.progress + " " + env.state.diagnostics.lastExport,
                     {infoX, y + 16, infoW, 120},
                     TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 38, 3);
 }
