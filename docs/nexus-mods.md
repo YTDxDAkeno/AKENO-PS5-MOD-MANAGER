@@ -33,16 +33,18 @@ documented v1 API and tested with recorded answers.
 ## Compatibility: always EXPERIMENTAL
 
 Nexus has no PS5 section; its mods are made for the **PC version**. Every Nexus
-mod is therefore **EXPERIMENTAL**: downloading needs a deliberate confirmation,
-and so does installing. After the download Akeno's check still refuses Windows
-programs (`.dll`, `.exe`, `.asi`), UE4SS and script loaders, console code,
-`fakelib`, `sce_sys` and `sce_module`. Many PC mods will not work on PS5 even
-when they pass (different file formats, different game versions); Vanilla
-removes them again.
+mod is therefore **EXPERIMENTAL** at download time and needs a deliberate
+confirmation. After the download, Akeno's check compares the archive with the
+installed game (see [compatibility-engine.md](compatibility-engine.md)): it
+separates packaging folders from game paths, parses Unreal containers, refuses
+Windows programs (`.dll`, `.exe`, `.asi`), UE4SS and script loaders, console
+code, `fakelib`, `sce_sys` and `sce_module`, and shows the proposed layout, the
+compatibility result and every reason that blocks activation.
 
-Nexus archives are installed **as they are laid out** (there is no Akeno
-manifest that says where the files belong). The check screen shows exactly
-where each file would go, before you confirm.
+PC files are **activated only with recorded evidence** that this game version
+loads them from that place and that such PC files work on its PS5 build (a game
+adapter). No title has that evidence yet, so Nexus mods can be checked and
+studied on the console but are not installed into the overlay.
 
 ## Downloads need Nexus Premium
 

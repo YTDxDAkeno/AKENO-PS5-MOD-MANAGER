@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Phase 3 screens: the Downloads tab and the confirmation dialog.
 #include <algorithm>
+#include <set>
 #include <array>
 #include <cmath>
 
@@ -248,11 +249,166 @@ Color findingColor(mods::FindingLevel level) {
     return theme::kNeutral;
 }
 
+// Outcome badges use the label colours of docs/compatibility.md; uncertain states are never green.
+Color outcomeColor(compatibility::Outcome outcome) {
+    using compatibility::Outcome;
+    switch (outcome) {
+        case Outcome::VerifiedPs5: return theme::badgeColor(providers::CompatibilityStatus::Verified);
+        case Outcome::LikelyCompatible: return theme::badgeColor(providers::CompatibilityStatus::Likely);
+        case Outcome::Experimental: return theme::badgeColor(providers::CompatibilityStatus::Experimental);
+        case Outcome::NeedsConversion:
+        case Outcome::RequiresUnsupportedLoader: return theme::badgeColor(providers::CompatibilityStatus::PcOnly);
+        case Outcome::Incompatible: return theme::badgeColor(providers::CompatibilityStatus::Incompatible);
+        case Outcome::Unknown: return theme::badgeColor(providers::CompatibilityStatus::Unknown);
+    }
+    return theme::kNeutral;
+}
+
+std::string upperCase(std::string_view text) {
+    std::string out(text);
+    for (char& ch : out) {
+        if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 32);
+    }
+    return out;
+}
+
+std::string outcomeLabel(compatibility::Outcome outcome) {
+    std::string label(compatibility::toString(outcome));
+    std::replace(label.begin(), label.end(), '_', ' ');
+    return label;
+}
+
+std::string targetLabel(mods::TargetState state) {
+    switch (state) {
+        case mods::TargetState::New: return "new file";
+        case mods::TargetState::Replaces: return "replaces a game file";
+        case mods::TargetState::TypeConflict: return "CONFLICTS with a game folder";
+        case mods::TargetState::Unknown: return "game file unknown";
+    }
+    return "";
+}
+
+// The archive as it is, as an indented tree (folders once, files with their size).
+void addArchiveTree(ICanvas& canvas, std::vector<draw::DocLine>& lines, const mods::ModAnalysis& a, int width) {
+    std::set<std::string> shownFolders;
+    std::size_t shown = 0;
+    for (const auto& file : a.files) {
+        if (shown >= 80) {
+            addWrappedLines(canvas, lines, strings::concat("... ", a.files.size() - shown, " more files"), width,
+                            FontRole::Small, theme::kTextSecondary);
+            break;
+        }
+        const auto parts = strings::split(file.archivePath, '/');
+        std::string folder;
+        for (std::size_t i = 0; i + 1 < parts.size(); ++i) {
+            folder = folder.empty() ? parts[i] : folder + "/" + parts[i];
+            if (shownFolders.insert(folder).second) {
+                draw::addWrappedLines(canvas, lines, std::string(i * 4, ' ') + parts[i] + "/", width, FontRole::Small,
+                                      theme::kTextPrimary);
+            }
+        }
+        draw::addWrappedLines(canvas, lines,
+                              std::string((parts.size() - 1) * 4, ' ') + parts.back() + "   " + strings::formatBytes(file.size),
+                              width, FontRole::Small, theme::kTextSecondary);
+        ++shown;
+    }
+}
+
 std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCheckReport& report, int width) {
     using draw::addHeadingLine;
     using draw::addWrappedLines;
     std::vector<draw::DocLine> lines;
     const mods::ModAnalysis& a = report.analysis;
+    const compatibility::Assessment& c = report.assessment;
+    const mods::ArchiveLayout& layout = report.layout;
+    auto row = [&](const std::string& label, const std::string& value, Color color = theme::kTextPrimary) {
+        addWrappedLines(canvas, lines, label + ": " + value, width, FontRole::Caption, color);
+    };
+
+    // The four separate answers: a good path is not a working mod.
+    addHeadingLine(lines, "Compatibility");
+    row("Result", outcomeLabel(c.outcome) + "  (category " + std::string(compatibility::toString(c.category)) + ": " +
+                      std::string(compatibility::describe(c.category)) + ")",
+        outcomeColor(c.outcome));
+    row("Installation path", std::string(mods::toString(c.mappingConfidence)) +
+                                 (layout.targetPrefix.empty() ? std::string() : " -> " + layout.targetPrefix));
+    row("Game loading", std::string(compatibility::toString(c.loading)) +
+                            (c.loading == compatibility::LoadingSupport::Unverified ? "  (nothing shows the game reads files from there)" : ""));
+    row("PS5 platform compatibility", std::string(compatibility::toString(c.platform)));
+    row("Activation", c.activationAllowed ? (c.needsConfirmation ? "allowed after you confirm (experimental)" : "allowed")
+                                          : "blocked",
+        c.activationAllowed ? theme::kOk : theme::kError);
+    if (!c.summary.empty()) addWrappedLines(canvas, lines, c.summary, width, FontRole::Small, theme::kTextSecondary);
+    if (!c.blockedReasons.empty()) {
+        addHeadingLine(lines, "Blocked because");
+        for (const auto& reason : c.blockedReasons) {
+            addWrappedLines(canvas, lines, reason, width, FontRole::Caption, theme::kTextPrimary, false, theme::kError);
+        }
+    }
+
+    addHeadingLine(lines, "What it is");
+    row("Detected engine", c.engine.empty() ? "not recognised" : c.engine);
+    row("Mod format", c.modFormat.empty() ? "-" : c.modFormat);
+    if (c.pcDependencies.empty()) {
+        row("PC dependencies", "none detected");
+    } else {
+        for (const auto& dependency : c.pcDependencies) row("PC dependency", dependency, theme::kError);
+    }
+    for (const auto& set : report.unreal.sets) {
+        std::string text = set.name + ": " + set.kind;
+        if (set.tocVersion > 0) text += strings::concat(", IoStore version ", set.tocVersion);
+        if (set.pakVersion > 0) text += strings::concat(", .pak version ", set.pakVersion);
+        text += set.companionsVerified ? ", .utoc and .ucas verified to belong together" : "";
+        addWrappedLines(canvas, lines, text, width, FontRole::Small, theme::kTextSecondary);
+        for (const auto& package : set.packages) {
+            addWrappedLines(canvas, lines, "    package " + package, width, FontRole::Small, theme::kTextSecondary);
+        }
+    }
+
+    addHeadingLine(lines, "Original archive layout");
+    addArchiveTree(canvas, lines, a, width);
+
+    addHeadingLine(lines, "Proposed installation layout");
+    if (!layout.packagingFolders.empty() && layout.rule != "manifest") {
+        std::string folders;
+        for (const auto& folder : layout.packagingFolders) folders += folders.empty() ? folder : "/" + folder;
+        addWrappedLines(canvas, lines, "Packaging folder, not installed: " + folders + "/", width, FontRole::Caption,
+                        theme::kTextPrimary);
+    }
+    addWrappedLines(canvas, lines, "How it was decided (" + layout.rule + "):", width, FontRole::Caption, theme::kTextSecondary);
+    for (const auto& item : layout.evidence) addWrappedLines(canvas, lines, "    " + item, width, FontRole::Small, theme::kTextSecondary);
+    for (const auto& item : layout.problems) addWrappedLines(canvas, lines, "    " + item, width, FontRole::Small, theme::kWarning);
+    const std::string backport = report.plan ? report.plan->backportDirectory + "/" : std::string("backports/") + report.titleId + "/";
+    std::size_t mapped = 0;
+    for (const auto& file : a.files) {
+        if (file.installPath.empty()) continue;
+        if (mapped++ == 60) {
+            addWrappedLines(canvas, lines, "... more files", width, FontRole::Small, theme::kTextSecondary);
+            break;
+        }
+        addWrappedLines(canvas, lines, backport + file.installPath + "   (" + targetLabel(file.target) + ")", width,
+                        FontRole::Small, file.target == mods::TargetState::TypeConflict ? theme::kError : theme::kTextPrimary);
+    }
+    if (mapped == 0) {
+        addWrappedLines(canvas, lines, "No destination: nothing would be installed.", width, FontRole::Caption, theme::kWarning);
+    }
+    std::size_t ignored = 0;
+    for (const auto& [path, reason] : layout.ignored) {
+        if (ignored++ == 10) break;
+        addWrappedLines(canvas, lines, "not installed: " + path + " (" + reason + ")", width, FontRole::Small, theme::kTextSecondary);
+    }
+
+    addHeadingLine(lines, "Installation risk");
+    if (c.risks.empty() && c.activationAllowed) {
+        addWrappedLines(canvas, lines, "No specific risk was found. The game's own files are never changed.", width,
+                        FontRole::Caption, theme::kTextSecondary);
+    }
+    for (const auto& risk : c.risks) addWrappedLines(canvas, lines, risk, width, FontRole::Caption, theme::kTextPrimary, false, theme::kWarning);
+    for (const auto& item : c.evidence) {
+        if (item.kind == compatibility::EvidenceKind::Against) {
+            addWrappedLines(canvas, lines, item.text, width, FontRole::Caption, theme::kTextPrimary, false, theme::kError);
+        }
+    }
 
     addHeadingLine(lines, "Findings");
     if (a.findings.empty()) {
@@ -287,17 +443,33 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
         addWrappedLines(canvas, lines, "This download is not linked to an installed game, so there is no plan.", width,
                         FontRole::Caption, theme::kTextSecondary);
     } else {
+        const mods::InstallPlan& plan = *report.plan;
+        addWrappedLines(canvas, lines,
+                        strings::concat(plan.files, " files: ", plan.additions, " new, ", plan.replacements,
+                                        " replacing game files, ", plan.unknownTargets, " not comparable with the game"),
+                        width, FontRole::Caption, theme::kTextPrimary);
+        for (const auto& conflict : plan.installedConflicts) {
+            addWrappedLines(canvas, lines, "Overlaps the installed mod " + conflict + " (later mods win)", width,
+                            FontRole::Caption, theme::kTextPrimary, false, theme::kWarning);
+        }
+        addWrappedLines(canvas, lines,
+                        strings::concat("Space needed: ", strings::formatBytes(plan.bytes), " stored + ",
+                                        strings::formatBytes(plan.overlayExtraBytes), " overlay copies + ",
+                                        strings::formatBytes(plan.reserveBytes), " always kept free"),
+                        width, FontRole::Caption, theme::kTextPrimary);
         int number = 1;
-        for (const auto& step : report.plan->steps) {
+        for (const auto& step : plan.steps) {
             addWrappedLines(canvas, lines, strings::concat(number++, ". ", step.title), width, FontRole::Caption,
                             theme::kTextPrimary, true);
             addWrappedLines(canvas, lines, step.detail, width, FontRole::Small, theme::kTextSecondary);
         }
-        if (report.plan->executable) {
+        addWrappedLines(canvas, lines, "Verification", width, FontRole::Caption, theme::kTextPrimary, true);
+        for (const auto& item : plan.verification) addWrappedLines(canvas, lines, item, width, FontRole::Small, theme::kTextSecondary);
+        if (plan.executable) {
             addWrappedLines(canvas, lines, "Press CROSS to install. Nothing changes before you confirm.", width,
                             FontRole::Caption, theme::kOk);
         } else {
-            addWrappedLines(canvas, lines, "Cannot be installed: " + report.plan->notExecutableReason, width,
+            addWrappedLines(canvas, lines, "Cannot be installed: " + plan.notExecutableReason, width,
                             FontRole::Caption, theme::kWarning);
         }
     }
@@ -315,6 +487,37 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
         const bool code = file.kind == mods::FileKind::WindowsCode || file.kind == mods::FileKind::NativeCode;
         addWrappedLines(canvas, lines, text, width, FontRole::Small, code ? theme::kError : theme::kTextSecondary);
     }
+
+    // For advanced users: every piece of evidence, and what was read from the game.
+    addHeadingLine(lines, "Advanced: evidence");
+    for (const auto& item : c.evidence) {
+        addWrappedLines(canvas, lines,
+                        "[" + std::string(compatibility::toString(item.kind)) + ", " +
+                            std::string(compatibility::toString(item.source)) + "] " + item.text,
+                        width, FontRole::Small,
+                        item.kind == compatibility::EvidenceKind::Against ? theme::kError : theme::kTextSecondary);
+    }
+    for (const auto& set : report.unreal.sets) {
+        for (const auto& item : set.evidence) addWrappedLines(canvas, lines, "[container] " + item, width, FontRole::Small, theme::kTextSecondary);
+        for (const auto& item : set.unknowns) addWrappedLines(canvas, lines, "[not checked] " + item, width, FontRole::Small, theme::kWarning);
+        for (const auto& item : set.issues) addWrappedLines(canvas, lines, "[problem] " + item, width, FontRole::Small, theme::kError);
+    }
+    if (report.unreal.importedTotal > 0) {
+        addWrappedLines(canvas, lines, strings::concat("Imports ", report.unreal.importedTotal, " packages, for example ",
+                                                       report.unreal.importedPackages.front()),
+                        width, FontRole::Small, theme::kTextSecondary);
+    }
+    const mods::GameReport& g = report.game;
+    addWrappedLines(canvas, lines,
+                    "Installed game: version " + (g.version.empty() ? std::string("unknown") : g.version) +
+                        (g.region.empty() ? std::string() : ", region " + g.region) + ", files " +
+                        (g.listed ? strings::concat(g.entries, g.complete ? " listed" : " listed (incomplete)") : "not readable") +
+                        (g.reason.empty() ? std::string() : " - " + g.reason),
+                    width, FontRole::Small, theme::kTextSecondary);
+    if (!g.paksDirectory.empty()) {
+        addWrappedLines(canvas, lines, "Game package folder: " + g.paksDirectory, width, FontRole::Small, theme::kTextSecondary);
+    }
+    for (const auto& container : g.containers) addWrappedLines(canvas, lines, "    " + container, width, FontRole::Small, theme::kTextSecondary);
     return lines;
 }
 
@@ -365,9 +568,14 @@ NavRequest ModCheckScreen::handle(Action action, UiEnv& env) {
                 strings::concat("Akeno keeps ", plan.files, " files (", strings::formatBytes(plan.bytes),
                                 ") and builds the overlay for ", plan.titleId, " from copies (",
                                 strings::formatBytes(plan.bytes), " more)."),
-                "ShadowMountPlus applies it the next time the game starts. The game's own files are not changed.",
+                "Compatibility: " + plan.outcome + ", installation path " + plan.mappingConfidence + ".",
+                "ShadowMountPlus applies it the next time the game starts. The game's own files are not changed. "
+                "Akeno cannot see whether the game then loads the files.",
                 "Vanilla on the game's page turns all mods off again.",
             };
+            if (plan.needsConfirmation) {
+                lines.insert(lines.begin() + 2, "EXPERIMENTAL: nothing confirms that it works on this game version.");
+            }
             return NavRequest::push(std::make_unique<ConfirmScreen>("Install this mod?", std::move(lines), "Install",
                                                                     confirmInstall_.callback(), false));
         }
@@ -438,15 +646,18 @@ void ModCheckScreen::render(ICanvas& canvas, UiEnv& env) {
     const mods::ModCheckReport& report = *view.report;
     const mods::ModAnalysis& a = report.analysis;
 
+    const compatibility::Assessment& c = report.assessment;
     int x = content.x;
     const int badgeY = content.y + 70;
-    x += draw::badge(canvas, x, badgeY, theme::badgeLabel(a.status), theme::badgeColor(a.status)) + 16;
-    if (a.hasBlockers()) {
-        draw::badge(canvas, x, badgeY, "BLOCKED", theme::kError);
-    } else if (a.installable) {
-        draw::badge(canvas, x, badgeY, "NO PROBLEMS FOUND", theme::kOk);
+    x += draw::badge(canvas, x, badgeY, outcomeLabel(c.outcome), outcomeColor(c.outcome)) + 16;
+    x += draw::badge(canvas, x, badgeY, "PATH " + upperCase(mods::toString(c.mappingConfidence)),
+                     c.mappingConfidence == mods::MappingConfidence::Established ? theme::kAccent : theme::kNeutral) + 16;
+    if (a.hasBlockers() || !c.activationAllowed) {
+        draw::badge(canvas, x, badgeY, a.hasBlockers() ? "BLOCKED" : "ACTIVATION BLOCKED", theme::kError);
+    } else if (c.needsConfirmation) {
+        draw::badge(canvas, x, badgeY, "ASKS FIRST", theme::kWarning);
     } else {
-        draw::badge(canvas, x, badgeY, "NOT INSTALLABLE", theme::kWarning);
+        draw::badge(canvas, x, badgeY, "CAN BE INSTALLED", theme::kOk);
     }
     std::string summary = strings::concat(a.installCount, a.installCount == 1 ? " file" : " files", " to install (",
                                           strings::formatBytes(a.installBytes), ") from ", report.archiveFiles,

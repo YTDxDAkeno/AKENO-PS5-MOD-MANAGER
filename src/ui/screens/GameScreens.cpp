@@ -374,10 +374,9 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     }
     drawWrappedText(canvas,
                     env.state.diagnostics.progress.empty()
-                        ? "Export Diagnostics (quick) lists stored mods, the overlay and the original folder with sizes and "
-                          "container headers, and hashes only small game files. Deep Diagnostics also hashes large game "
-                          "files and takes much longer. Neither activates mods or launches the game; no game assets are "
-                          "exported."
+                        ? "Export Diagnostics lists stored mods, the overlay and the game folder (sizes, container "
+                          "headers; only small game files are hashed). Deep Diagnostics also hashes large game files and "
+                          "is slow. Nothing is activated or launched."
                         : env.state.diagnostics.progress + " " + env.state.diagnostics.lastExport,
                     {infoX, y + 16, infoW, 120},
                     TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 38, 3);

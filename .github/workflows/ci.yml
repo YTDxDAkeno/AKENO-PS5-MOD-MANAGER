@@ -77,8 +77,10 @@ jobs:
           reports = list((Path(os.environ["RUNNER_TEMP"]) / "akeno-ui/logs/diagnostics").glob("*.json"))
           assert len(reports) == 1, reports
           report = json.loads(reports[0].read_text())
-          assert report["schemaVersion"] == 2
+          assert report["schemaVersion"] == 3
+          assert report["diagnosticsMode"] == "quick"
           assert report["titles"][0]["titleId"] == "PPSA90001"
+          assert report["titles"][0]["selection"].get("status") is not None
           assert report["activationPerformed"] is False
           assert report["gameLaunchPerformed"] is False
           assert report["gameAssetsExported"] is False

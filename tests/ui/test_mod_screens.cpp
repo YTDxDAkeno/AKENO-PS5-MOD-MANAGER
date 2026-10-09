@@ -4,6 +4,8 @@
 #include "TestSupport.hpp"
 #include "UiTestSupport.hpp"
 #include "akeno/mods/ModCheck.hpp"
+#include "akeno/compatibility/CompatibilityEngine.hpp"
+#include "akeno/mods/ArchiveLayout.hpp"
 #include "akeno/ui/Screens.hpp"
 #include "akeno/ui/UiScript.hpp"
 
@@ -527,9 +529,87 @@ mods::ModCheckReport sampleReport(bool blocked) {
         dll.head = "MZ";
         input.files.push_back(dll);
     }
+    // The same steps as the check: layout (curated manifest), content analysis, assessment.
+    mods::LayoutInput layoutInput;
+    for (const auto& file : input.files) layoutInput.files.push_back({file.path, mods::classifyFile(file.path, file.head)});
+    layoutInput.manifestArchiveRoot = "";
+    report.layout = mods::analyzeLayout(layoutInput);
+    input.mapping = report.layout.mapping;
     report.analysis = mods::analyzeMod(input);
-    report.plan = mods::planInstall(report.analysis, AppPaths{"/data/akeno-mod-manager"}, "PPSA90001", "aaaaaaaaaaaaaaaa");
+    compatibility::ModFacts facts;
+    facts.provider = "akeno-catalogue";
+    facts.curated = true;
+    facts.catalogueStatus = CompatibilityStatus::Verified;
+    facts.catalogueInstallable = true;
+    facts.analysis = &report.analysis;
+    facts.layout = &report.layout;
+    compatibility::GameFacts game;
+    game.titleId = "PPSA90001";
+    game.version = "01.011.000";
+    report.assessment = compatibility::assess(facts, game);
+    mods::PlanContext context;
+    context.layout = &report.layout;
+    context.assessment = &report.assessment;
+    report.plan = mods::planInstall(report.analysis, AppPaths{"/data/akeno-mod-manager"}, "PPSA90001",
+                                    "aaaaaaaaaaaaaaaa", std::nullopt, &context);
     report.conflicts = {{"bbbbbbbbbbbbbbbb", "Another Outfit", {"Content/Paks/~mods/crimson.pak"}, 1}};
+    return report;
+}
+
+// The check result of the Better Carry Weight x10 archive for PPSA28000, as the pipeline
+// produces it (tests/mods/test_bcw_case.cpp runs the pipeline itself).
+mods::ModCheckReport betterCarryWeightReport() {
+    mods::ModCheckReport report;
+    report.downloadId = "dac30f1aa5840955";
+    report.displayName = "Better Carry Weight x10";
+    report.modVersion = "1.0";
+    report.titleId = "PPSA28000";
+    report.checkedAt = "2026-10-08T16:51:00Z";
+    report.archiveFiles = 3;
+    const std::string folder = "Better Carry Weight x10/";
+    const std::string target = "dawnwalker/content/paks/~mods/";
+    for (const auto& [name, size] : std::vector<std::pair<std::string, std::uint64_t>>{
+             {"00000000_BetterCarryWeightx10_P.pak", 347}, {"00000000_BetterCarryWeightx10_P.ucas", 171112},
+             {"00000000_BetterCarryWeightx10_P.utoc", 368}}) {
+        mods::AnalyzedFile file;
+        file.archivePath = folder + name;
+        file.installPath = target + name;
+        file.size = size;
+        file.sha256 = std::string(64, 'a');
+        file.target = mods::TargetState::New;
+        report.analysis.files.push_back(file);
+        ++report.analysis.installCount;
+        report.analysis.installBytes += size;
+    }
+    report.layout.rule = "unreal-flat";
+    report.layout.confidence = mods::MappingConfidence::Candidate;
+    report.layout.packagingFolders = {"Better Carry Weight x10"};
+    report.layout.archiveRoot = "Better Carry Weight x10";
+    report.layout.targetPrefix = "dawnwalker/content/paks/~mods";
+    report.layout.evidence = {"The game has 'dawnwalker/content/paks' (its Unreal package folder)."};
+    report.assessment.outcome = compatibility::Outcome::Unknown;
+    report.assessment.category = compatibility::ModCategory::PotentiallyPortable;
+    report.assessment.mappingConfidence = mods::MappingConfidence::Candidate;
+    report.assessment.loading = compatibility::LoadingSupport::Unverified;
+    report.assessment.platform = compatibility::PlatformCompatibility::Unknown;
+    report.assessment.engine = "Unreal Engine";
+    report.assessment.modFormat = "IoStore package set (.pak + .utoc + .ucas)";
+    report.assessment.blockedReasons = {
+        "The installation path dawnwalker/content/paks/~mods is only a candidate: the archive does not state it, and "
+        "no verified rule for this game confirms it."};
+    mods::UnrealSetReport set;
+    set.name = "Better Carry Weight x10/00000000_BetterCarryWeightx10_P";
+    set.kind = "IoStore container (.pak + .utoc + .ucas)";
+    set.tocVersion = 8;
+    set.pakVersion = 11;
+    set.companionsVerified = true;
+    set.packages = {"/Game/_Dawnwalker/Player/BP_PlayerCharacter"};
+    report.unreal.sets = {set};
+    mods::PlanContext context;
+    context.layout = &report.layout;
+    context.assessment = &report.assessment;
+    report.plan = mods::planInstall(report.analysis, AppPaths{"/data/akeno-mod-manager"}, "PPSA28000",
+                                    "dac30f1aa5840955", false, &context);
     return report;
 }
 
@@ -561,12 +641,25 @@ TEST_CASE("completed downloads open their check, which shows findings, conflicts
     canvas.clear();
     host.render(canvas, h.env);
     CHECK(h.commands.checks.size() == 1);
-    CHECK(canvas.hasText("NO PROBLEMS FOUND"));
-    CHECK(canvas.hasText("VERIFIED"));
+    CHECK(canvas.hasText("CAN BE INSTALLED"));
+    CHECK(canvas.hasText("VERIFIED PS5"));
+    CHECK(canvas.hasText("PATH ESTABLISHED"));
     CHECK(canvas.hasText("1 file to install (4.0 KB) from 3 in the archive"));
-    CHECK(canvas.hasText("Another Outfit: 1 file in common"));
-    CHECK(canvas.hasText("Install plan (CROSS installs; nothing changes before that)"));
-    for (int i = 0; i < 2; ++i) host.handle(Action::PageDown, h.env);
+    CHECK(canvas.hasText("Installation path: established"));
+    {
+        // Further down the document.
+        bool conflict = false, plan = false;
+        for (int page = 0; page < 10; ++page) {
+            host.handle(Action::PageDown, h.env);
+            test::RecordingCanvas paged;
+            host.render(paged, h.env);
+            conflict = conflict || paged.hasText("Another Outfit: 1 file in common");
+            plan = plan || paged.hasText("Install plan (CROSS installs; nothing changes before that)");
+        }
+        CHECK(conflict);
+        CHECK(plan);
+    }
+    for (int i = 0; i < 6; ++i) host.handle(Action::PageDown, h.env);
     CHECK(screen->scroll() > 0);
     canvas.clear();
     host.render(canvas, h.env);
@@ -591,8 +684,9 @@ TEST_CASE("completed downloads open their check, which shows findings, conflicts
     canvas.clear();
     host.render(canvas, h.env);
     CHECK(canvas.hasText("BLOCKED"));
-    CHECK(canvas.hasText("PC ONLY"));
-    CHECK(canvas.hasText("Contains Windows programs or libraries (1 files). This is a PC mod. (Binaries/dwmapi.dll)"));
+    CHECK(canvas.hasText("REQUIRES UNSUPPORTED LOADER"));
+    CHECK(canvas.hasText("Activation: blocked"));
+    CHECK(canvas.hasText("PS5 platform compatibility: incompatible"));
 
     h.state.check.report.reset();
     h.state.check.error = makeError(ErrorCode::SafetyViolation, "The archive was refused: it contains a symbolic link.");
@@ -762,4 +856,51 @@ TEST_CASE("wrapText breaks at spaces and keeps paragraphs") {
     CHECK(lines[3] == "five");
     auto longWord = wrapText(canvas, "https://example.com/a/very/long/path", 60, FontRole::Body, false);
     REQUIRE(longWord.size() == 1);
+}
+
+TEST_CASE("the check shows the original layout, the proposed mapping and why activation is blocked") {
+    test::UiHarness h;
+    auto d = details(true);
+    h.state.downloads.items = {downloadOf(d, downloads::DownloadState::Completed, 1000, "dac30f1aa5840955")};
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    host.handle(Action::Confirm, h.env);  // opens the check of the completed download
+    REQUIRE(dynamic_cast<ModCheckScreen*>(host.top()) != nullptr);
+    test::RecordingCanvas first;
+    host.render(first, h.env);  // requests the check
+    h.state.check.downloadId = "dac30f1aa5840955";
+    h.state.check.running = false;
+    h.state.check.report = betterCarryWeightReport();
+    std::vector<std::string> seen;
+    for (int page = 0; page < 12; ++page) {
+        test::RecordingCanvas canvas;
+        host.render(canvas, h.env);
+        for (const auto& text : canvas.texts) seen.push_back(text);
+        host.handle(Action::PageDown, h.env);
+    }
+    auto has = [&](const std::string& text) {
+        return std::any_of(seen.begin(), seen.end(), [&](const std::string& s) { return s.find(text) != std::string::npos; });
+    };
+    CHECK(has("UNKNOWN"));
+    CHECK(has("PATH CANDIDATE"));
+    CHECK(has("ACTIVATION BLOCKED"));
+    CHECK(has("Installation path: candidate -> dawnwalker/content/paks/~mods"));
+    CHECK(has("Game loading: unverified"));
+    CHECK(has("PS5 platform compatibility: unknown"));
+    CHECK(has("Activation: blocked"));
+    CHECK(has("only a candidate"));
+    CHECK(has("Detected engine: Unreal Engine"));
+    CHECK(has("Mod format: IoStore package set (.pak + .utoc + .ucas)"));
+    CHECK(has("PC dependencies: none detected"));
+    CHECK(has("Original archive layout"));
+    CHECK(has("Better Carry Weight x10/"));
+    CHECK(has("Packaging folder, not installed: Better Carry Weight x10/"));
+    CHECK(has("/data/homebrew/backports/PPSA28000/dawnwalker/content/paks/~mods/00000000_BetterCarryWeightx10_P.ucas (new file)"));
+    CHECK(has("package /Game/_Dawnwalker/Player/BP_PlayerCharacter"));
+    CHECK(has("Cannot be installed:"));
+    // CROSS explains instead of installing.
+    host.handle(Action::Confirm, h.env);
+    CHECK(dynamic_cast<ConfirmScreen*>(host.top()) == nullptr);
+    CHECK(h.commands.installs.empty());
 }

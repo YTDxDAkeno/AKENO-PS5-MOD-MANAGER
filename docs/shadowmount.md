@@ -145,6 +145,18 @@ it does not change installation destinations or authorize activation.
   and would race with it.
 * Symlinks inside the overlay: skipped by SMP for PKG games.
 
+### 4.3 Observations from the PPSA28000 session (2026-10-08)
+
+* SMP logs `backport overlay mounted (rw)` for a folder game: the unionfs layer is writable.
+  FreeBSD's unionfs creates shadow directories in a writable upper layer when lower-only
+  directories are looked up, so a mounted run may add empty folders to Akeno's backport
+  (hypothesis; Quick diagnostics mark unrecorded overlay entries).
+* `[BKP] permissions fixed: root=/data/homebrew/backports entries=3` after a targeted scan:
+  the permission repair changes ctime below `backports/`. Diagnostics no longer treat that as a
+  content change.
+* Mounting is only visible in SMP's debug.log; Akeno logs "overlay-mounted: not-observed".
+  See `docs/investigations/ppsa28000-better-carry-weight.md`.
+
 ## 5. Open questions for hardware testing
 
 * Why does `link()` fail in `/data/akeno-mod-manager/staging` on 12.20?
@@ -152,8 +164,10 @@ it does not change installation destinations or authorize activation.
   folder and the source file exist. If hard links stay unavailable, the
   question below is moot and overlays use copies.
 * Independent copies are used for overlays; no hard-link behavior is assumed.
-* Does the PS5 build of the first target game (Stellar Blade) load
-  additional `.pak`/`.utoc`/`.ucas` files from a `~mods` directory, or
-  only replacements of existing files?
+* Does the PS5 build of an Unreal title (first candidates: Stellar Blade,
+  PPSA28000) load additional `.pak`/`.utoc`/`.ucas` files from
+  `<project>/content/paks/~mods`, or only replacements of existing files?
+  Until a test answers this per title and version, Akeno treats `~mods` as a
+  candidate path and does not activate PC package sets there.
 * Does the SMP permission repair run on Akeno-published directories before
   the next launch? The effect on launch behavior remains unverified.

@@ -547,6 +547,12 @@ IoStoreToc parseIoStoreToc(const ByteSource& source, const TocParseOptions& opti
         toc.detail = "Header and chunk ids only.";
         return toc;
     }
+    // Every chunk needs an id, an offset/length pair and metadata: refuse a count the file
+    // cannot hold before allocating anything for it.
+    const std::uint64_t perChunk = 12 + 10 + (toc.version >= 8 ? 24 : 33);
+    if (kHeaderSize + static_cast<std::uint64_t>(entryCount) * perChunk > source.size()) {
+        return fail<IoStoreToc>(ParseStatus::Malformed, "The chunk count does not fit the table of contents.");
+    }
     toc.chunks.resize(entryCount);
     for (auto& chunk : toc.chunks) {
         chunk.id = ic.u64();

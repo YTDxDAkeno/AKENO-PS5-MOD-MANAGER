@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The project follows
 semantic versioning once it reaches 1.0. Until then, minor versions may change
 anything.
 
+## [Unreleased] - installation mapping, Unreal analysis, compatibility engine
+
+Host tested (unit, sanitizer, offscreen UI); **not hardware tested**. No game was launched.
+
+### Fixed
+- Archives from Nexus Mods and GameBanana were installed with their packaging folder at the
+  root of the overlay (PPSA28000: `backports/PPSA28000/Better Carry Weight x10/...`). Every
+  archive now goes through a layout analysis that separates packaging folders from game paths.
+- `akeno.log` lost INFO lines (they stayed in a user-space buffer; an export right after an
+  install read an empty log). The file sink writes every record at once and fsyncs warnings,
+  errors and install stages.
+- Diagnostic exports no longer spend their budget hashing multi-gigabyte game containers and no
+  longer discard the overlay-selection prediction when a time limit is hit; budget stops are no
+  longer reported as filesystem errors; errno is kept; ctime-only changes (SMP's permission
+  repair) are not reported as content changes; title discovery resets errno per entry.
+
+### Added
+- Archive layout analysis (`mods::analyzeLayout`): manifest, Unreal project layout, game-root
+  and flat-package-set rules, compared with a read-only listing of the installed game; mapping
+  confidence `none`/`ambiguous`/`candidate`/`likely`/`established`; original archive path kept.
+- Unreal Engine analysis (`src/unreal/`): .pak versions 1-11 with SHA-1 index checks, IoStore
+  .utoc versions 1-8, chunk hashes recomputed from .ucas (BLAKE3), container headers, Zen package
+  names and imports, legacy package summaries, package-set grouping and companion checks, UE4SS
+  and LogicMods detection; the game's own containers are probed (headers and package ids only).
+- Compatibility engine (`compatibility::assess`): VERIFIED_PS5, LIKELY_COMPATIBLE, EXPERIMENTAL,
+  NEEDS_CONVERSION, REQUIRES_UNSUPPORTED_LOADER, INCOMPATIBLE, UNKNOWN; categories A-D; mapping
+  confidence, game loading support, platform compatibility and activation kept separate; game
+  adapters and conversion providers as extension points (none registered).
+- Check screen: compatibility summary, blocked reasons, original archive tree, detected engine,
+  mod format, PC dependencies, proposed overlay layout, risks, plan details (additions,
+  replacements, overlaps, space, verification) and an advanced evidence panel.
+- Installation ladder in the log (download complete ... behaviour verified); stages 5-7 are
+  only ever "not-observed".
+- Quick (default) and Deep diagnostics; "Deep Diagnostics" in game details; report schema 3.
+- Demo catalogue containers are structurally valid; `tests/fixtures/mods/better-carry-weight-x10`.
+
+### Changed
+- PC mods (Nexus Mods, GameBanana) are installed only with recorded evidence for the title and
+  game version (a game adapter). None ships, so they are analysed and explained, not activated.
+  PC mods installed by 0.2.0-alpha can be turned off or removed, not re-activated.
+- `.pak/.utoc/.ucas` files that do not parse, are incomplete or fail their hashes block
+  installation (category D), also for catalogue entries.
+
 ## [0.2.0-alpha] - unreleased
 
 **Phase 5: installing mods through ShadowMountPlus backports.** Unit and mock

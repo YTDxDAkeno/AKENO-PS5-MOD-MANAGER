@@ -495,7 +495,7 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
     }
 
     // Platform compatibility of the content itself.
-    if (incompatible) {
+    if (incompatible || categoryD || categoryC) {
         a.platform = PlatformCompatibility::Incompatible;
     } else if (needsConversion) {
         a.platform = PlatformCompatibility::NeedsConversion;
@@ -525,10 +525,12 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
     }
 
     // Outcome.
-    if (categoryD || a.platform == PlatformCompatibility::Incompatible) {
+    if (categoryD) {
         a.outcome = Outcome::Incompatible;
     } else if (categoryC) {
         a.outcome = Outcome::RequiresUnsupportedLoader;
+    } else if (a.platform == PlatformCompatibility::Incompatible) {
+        a.outcome = Outcome::Incompatible;
     } else if (a.platform == PlatformCompatibility::NeedsConversion) {
         a.outcome = Outcome::NeedsConversion;
     } else if (mod.curated) {

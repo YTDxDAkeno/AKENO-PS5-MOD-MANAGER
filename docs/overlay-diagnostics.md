@@ -1,5 +1,42 @@
 # Read-only overlay diagnostics
 
+## Quick and Deep diagnostics (schema 3)
+
+**Export Diagnostics** is the Quick mode and the default. **Deep Diagnostics** (game details)
+does the same with larger budgets and hashes every game file. Both are read-only.
+
+| | Quick | Deep |
+|---|---|---|
+| Whole export | 180 s | 900 s |
+| Game folder inventory | its own 60 s slice | 840 s |
+| Game files hashed | up to 1 MiB each (larger: size, type and container header only) | all |
+| Bytes hashed in total | 8 GiB | 64 GiB |
+| Entries | 50 000 | 200 000 |
+
+Order of work, so a large game can never starve the checks that matter:
+
+1. ShadowMountPlus version, settings and game list.
+2. **Overlay selection**, evaluated before any inventory (`evaluatedBeforeInventory`).
+3. Akeno's own trees: recorded state, stored mods (fully hashed) and the published overlay.
+   Overlay entries Akeno did not record are marked `recordedByAkeno: false`; empty ones carry a
+   note (possible unionfs shadow folders from a mounted run; a hypothesis).
+4. The game's physical folder in its own time slice. `.utoc` headers and `.pak` footers are read
+   (`container`: IoStore version, chunk count, compressed/encrypted/signed/indexed; pak version,
+   encrypted index, compression methods). Large files are `hashStatus: skipped-quick-mode`.
+5. Candidate folders and the SMP API are checked again. This runs even after a time limit; only
+   cancelling skips it. Unchanged evidence sets `apiEvidenceRechecked: true`.
+
+An incomplete tree has `status: partial`, `complete: false` and `incompleteReasons`
+(`time limit`, `entry limit`, `cancellation`, `filesystem`, `path`, `links`, `depth`,
+`nested-filesystem`). Budget stops say so ("Not inventoried: the export's time limit was
+reached") and are never reported as filesystem errors. Filesystem findings keep their errno
+("Cannot open file: EACCES (Permission denied)"). Changes of permissions or ownership only
+(ctime; ShadowMountPlus repairs permissions below `backports/` during its scans) are listed under
+`metadataChanges` and do not make a tree incomplete; changes of content (size, mtime, inode)
+still do. Top-level fields: `diagnosticsMode`, `timeLimitReached`,
+`gameInventoryTimeLimitReached`, `phaseSeconds`, `bytesHashed`, `limits`. Stored mods show their
+`recordedActivation` decision (`null` for mods installed before decisions were recorded).
+
 ## Export directly on PS5
 
 Open **Games → game details → Export Diagnostics** to collect one title, including
@@ -22,7 +59,7 @@ Reports are JSON files under
 the new report is written; game/mod files, state and recovery journals are read.
 The existing application may continue writing its normal log.
 
-Native report schema **2** contains:
+Native report schema **3** (schema 2 plus the fields above) contains:
 
 * Detected firmware (or `known: false`), title ID, game version and source,
   Akeno version, full Git revision, source/configuration SHA-256, compiler and
@@ -61,9 +98,8 @@ Native report schema **2** contains:
   private information: review before sharing. No kernel/panic trace collection
   is asserted, and successful-run logs must not be labelled crash evidence.
 
-Bounds are shared across each export: 50,000 filesystem entries, 64 GiB hashed,
-300 seconds of traversal, 64 levels, 256 stored mods per title, bounded state
-and configuration reads, and 256 KiB per log tail. Exceeding a byte budget leaves
+Bounds are shared across each export (Quick/Deep values above), 64 levels, 256 stored mods
+per title, bounded state and configuration reads, and 256 KiB per log tail. Exceeding a byte budget leaves
 null hashes with reasons; cancellation/time/entry limits leave partial trees.
 Check `complete`, `hashesComplete`, `hashStatus`, findings and top-level limit
 flags. Directory enumeration and hash checks detect some concurrent changes,

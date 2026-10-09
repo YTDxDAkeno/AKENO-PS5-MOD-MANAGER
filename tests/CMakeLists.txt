@@ -24,6 +24,8 @@ add_executable(akeno_tests
     shadowmount/test_shadowmount.cpp
     mods/test_catalog.cpp
     compatibility/test_compatibility_rules.cpp
+    compatibility/test_compatibility_engine.cpp
+    games/test_game_tree.cpp
     providers/test_catalog_provider.cpp
     providers/test_nexus_provider.cpp
     providers/test_gamebanana_provider.cpp
@@ -31,6 +33,10 @@ add_executable(akeno_tests
     archives/test_secure_extractor.cpp
     mods/test_mod_analyzer.cpp
     mods/test_mod_check.cpp
+    mods/test_archive_layout.cpp
+    mods/test_bcw_case.cpp
+    unreal/test_unreal_formats.cpp
+    unreal/test_unreal_analyzer.cpp
     install/test_overlay_manager.cpp
     diagnostics/test_diagnostic_export.cpp
     app/test_system_check.cpp
