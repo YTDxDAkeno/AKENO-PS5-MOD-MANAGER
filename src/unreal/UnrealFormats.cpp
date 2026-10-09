@@ -12,6 +12,7 @@
 
 #include "akeno/core/Strings.hpp"
 #include "akeno/security/Digests.hpp"
+#include "akeno/security/SafeOpen.hpp"
 
 namespace akeno::unreal {
 
@@ -223,9 +224,18 @@ Result<std::string> FileSource::read(std::uint64_t offset, std::size_t length) c
     std::string buffer(length, '\0');
     std::size_t done = 0;
     while (done < length) {
-        const ssize_t n = ::pread(fd_, buffer.data() + done, length - done, static_cast<off_t>(offset + done));
+        ssize_t n = ::pread(fd_, buffer.data() + done, length - done, static_cast<off_t>(offset + done));
         if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) return makeError(ErrorCode::IoError, "Could not read a file.", label_);
+        if (n < 0 && (errno == ENOSYS || errno == ESPIPE)) {
+            // The descriptor is this source's own, so seeking it disturbs nobody.
+            if (::lseek(fd_, static_cast<off_t>(offset + done), SEEK_SET) < 0) {
+                return makeError(ErrorCode::IoError, "Could not read a file.", label_ + ": " + security::describeErrno(errno));
+            }
+            n = ::read(fd_, buffer.data() + done, length - done);
+            if (n < 0 && errno == EINTR) continue;
+        }
+        if (n < 0) return makeError(ErrorCode::IoError, "Could not read a file.", label_ + ": " + security::describeErrno(errno));
+        if (n == 0) return makeError(ErrorCode::IoError, "Could not read a file.", label_ + ": it ended early");
         done += static_cast<std::size_t>(n);
     }
     return buffer;

@@ -24,6 +24,13 @@ Host tested (unit, sanitizer, offscreen UI); **not hardware tested**. No game wa
 - A classic `.pak` with cooked packages for an IoStore game is NEEDS_CONVERSION.
 
 ### Fixed
+- **On the console, mod checks could not open any extracted file and could not list the game**
+  (hardware report 2026-10-09, firmware 12.20: "The .pak could not be read: A file cannot be
+  opened", "Installation path: none"). Descriptors were duplicated with
+  `fcntl(F_DUPFD_CLOEXEC)`, which that PS5 kernel refused; they are duplicated with `dup()` again,
+  as in the hardware-tested 0.2.0-alpha. This also affected Quick/Deep diagnostics and the game
+  container probe. Read failures now carry errno, a short-read fallback uses `lseek`+`read`, and
+  the system check reports "folder-relative file access" on every start.
 - One mod installed by 0.2.0-alpha without a checked path made every overlay change of the game
   fail ("installed without a verified installation path"), so no mod could be activated any more.
   Such mods are now turned off with an explanation and the other mods are applied; installing the

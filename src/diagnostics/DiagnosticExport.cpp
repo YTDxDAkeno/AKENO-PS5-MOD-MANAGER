@@ -54,7 +54,7 @@ namespace {
 
 // Directory streams get their own descriptor: closedir() closes it, the walk keeps its own.
 DIR* directoryStream(int fd) {
-    const int copy = ::fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    const int copy = security::duplicateDescriptor(fd);
     if (copy < 0) return nullptr;
     DIR* stream = ::fdopendir(copy);
     if (!stream) {
@@ -148,7 +148,7 @@ Json containerHeader(int fd, const std::string& name) {
     const std::string lower = strings::toLowerAscii(name);
     const bool toc = strings::endsWith(lower, ".utoc");
     if (!toc && !strings::endsWith(lower, ".pak")) return nullptr;
-    const int copy = ::fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    const int copy = security::duplicateDescriptor(fd);
     auto source = unreal::FileSource::fromDescriptor(copy, name);
     if (!source) return {{"status", "unreadable"}};
     if (toc) {

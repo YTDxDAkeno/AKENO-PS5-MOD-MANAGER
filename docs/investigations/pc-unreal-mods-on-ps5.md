@@ -61,6 +61,17 @@ This is the "experiment mode" of the earlier roadmap, limited to what cannot har
 files are only added to Akeno's overlay, the original game is never written, Vanilla removes
 everything, and a crash of the game is recoverable by turning the mod off.
 
+## First console attempt (2026-10-09)
+
+The first build with test installs could not inspect the mod on the console: the check showed
+"The .pak could not be read: A file cannot be opened" and "Installation path: none". The folder
+of the extracted mod opened, but nothing below it: every file below an opened folder is reached
+through a duplicated descriptor, and that build duplicated with `fcntl(F_DUPFD_CLOEXEC)`, which
+the console refused (the game listing failed the same way, so no installation path could be
+found). The hardware-tested 0.2.0-alpha used `dup()`, which is used again. The system check now
+reports "folder-relative file access: OK/FAILED (step: errno)" so a console report shows this
+directly.
+
 ## Unknowns that remain
 
 * Whether PPSA28000 (or any PS5 UE5 title) mounts containers from `~mods` or from `Content/Paks`.

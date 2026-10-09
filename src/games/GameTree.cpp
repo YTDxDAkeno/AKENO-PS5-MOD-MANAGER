@@ -111,7 +111,7 @@ GameTree probeGameTree(const std::filesystem::path& root, const GameTreeLimits& 
             stop("Folders are nested deeper than the listing limit.");
             return;
         }
-        const int copy = ::fcntl(directory, F_DUPFD_CLOEXEC, 0);
+        const int copy = security::duplicateDescriptor(directory);
         DIR* dir = copy >= 0 ? ::fdopendir(copy) : nullptr;
         if (dir == nullptr) {
             if (copy >= 0) ::close(copy);

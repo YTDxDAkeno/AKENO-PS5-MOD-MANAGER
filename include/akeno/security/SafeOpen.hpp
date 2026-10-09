@@ -42,6 +42,18 @@ UniqueFd openNoFollow(const std::filesystem::path& absolute, bool directory);
 // without following links.
 UniqueFd openBelow(int directoryFd, std::string_view relative, bool directory);
 
+// A second descriptor for the same open file (for fdopendir(), which takes ownership, or a
+// reader that closes its own copy). Uses dup(): fcntl(F_DUPFD_CLOEXEC) was refused on a PS5
+// (firmware 12.20: no file below an opened folder could be read), dup() is what the
+// hardware-tested 0.2.0-alpha used. Close-on-exec is set when the kernel accepts it; Akeno never
+// executes anything, so it is not required. Returns -1 with errno set on failure.
+int duplicateDescriptor(int fd);
+
+// Opens a probe file below `folder` the way mod checks and game listings do (open the folder,
+// duplicate its descriptor, open below it, list it). Empty when it works, else the failing step
+// and errno. Used by the system check so a console report shows whether this works.
+std::string probeFolderAccess(const std::filesystem::path& folder, std::string_view probeFile);
+
 // "ENOENT (No such file or directory)": errno values are kept in reports so that behaviour seen
 // on a console can be told apart from Akeno's own decisions.
 std::string describeErrno(int error);

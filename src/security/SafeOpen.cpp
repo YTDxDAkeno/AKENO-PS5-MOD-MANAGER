@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstring>
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -66,9 +67,42 @@ UniqueFd openBelow(int directoryFd, std::string_view relative, bool directory) {
         errno = EINVAL;
         return UniqueFd();
     }
-    const int copy = ::fcntl(directoryFd, F_DUPFD_CLOEXEC, 0);
+    const int copy = duplicateDescriptor(directoryFd);
     if (copy < 0) return UniqueFd();
     return walk(UniqueFd(copy), relative, directory);
+}
+
+int duplicateDescriptor(int fd) {
+    const int copy = ::dup(fd);
+    if (copy < 0) return -1;
+    const int error = errno;
+    (void)::fcntl(copy, F_SETFD, FD_CLOEXEC);  // best effort
+    errno = error;
+    return copy;
+}
+
+std::string probeFolderAccess(const std::filesystem::path& folder, std::string_view probeFile) {
+    UniqueFd root = openNoFollow(folder, true);
+    if (!root.valid()) return "opening " + folder.string() + ": " + describeErrno(errno);
+    UniqueFd file = openBelow(root.get(), probeFile, false);
+    if (!file.valid()) return "opening " + std::string(probeFile) + " below it: " + describeErrno(errno);
+    char byte = 0;
+    if (::pread(file.get(), &byte, 1, 0) < 0) return "reading " + std::string(probeFile) + ": " + describeErrno(errno);
+    const int copy = duplicateDescriptor(root.get());
+    if (copy < 0) return "duplicating the folder descriptor: " + describeErrno(errno);
+    DIR* dir = ::fdopendir(copy);
+    if (dir == nullptr) {
+        const int error = errno;
+        ::close(copy);
+        return "listing the folder: " + describeErrno(error);
+    }
+    bool found = false;
+    const std::string name(probeFile.substr(probeFile.rfind('/') == std::string_view::npos ? 0 : probeFile.rfind('/') + 1));
+    while (const dirent* entry = ::readdir(dir)) {
+        if (name == entry->d_name) found = true;
+    }
+    ::closedir(dir);
+    return found || probeFile.find('/') != std::string_view::npos ? std::string() : "the probe file is not listed";
 }
 
 std::string describeErrno(int error) {

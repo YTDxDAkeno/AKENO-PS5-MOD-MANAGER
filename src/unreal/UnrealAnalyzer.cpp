@@ -84,7 +84,7 @@ void analyzeIoStore(PackageSet& set, const std::map<std::string, const ModFile*>
     if (set.hasPak) {
         auto source = opener.open(pathFor("pak"));
         if (!source) {
-            set.unknowns.push_back("The .pak could not be read: " + source.error().message);
+            set.unknowns.push_back("The .pak could not be read: " + source.error().describe());
         } else {
             set.pak = parsePak(*source.value());
             const PakFile& pak = *set.pak;
@@ -102,7 +102,7 @@ void analyzeIoStore(PackageSet& set, const std::map<std::string, const ModFile*>
     if (!set.hasUtoc) return;
     auto tocSource = opener.open(pathFor("utoc"));
     if (!tocSource) {
-        set.unknowns.push_back("The .utoc could not be read: " + tocSource.error().message);
+        set.unknowns.push_back("The .utoc could not be read: " + tocSource.error().describe());
         return;
     }
     set.toc = parseIoStoreToc(*tocSource.value());
@@ -136,7 +136,7 @@ void analyzeIoStore(PackageSet& set, const std::map<std::string, const ModFile*>
     if (!set.hasUcas) return;
     auto casSource = opener.open(pathFor("ucas"));
     if (!casSource) {
-        set.unknowns.push_back("The .ucas could not be read: " + casSource.error().message);
+        set.unknowns.push_back("The .ucas could not be read: " + casSource.error().describe());
         return;
     }
     const ByteSource& cas = *casSource.value();
@@ -336,7 +336,7 @@ UnrealAnalysis analyzeUnreal(const std::vector<ModFile>& files, const FileOpener
             }
             auto source = opener.open(pakPath);
             if (!source) {
-                set.unknowns.push_back("The .pak could not be read: " + source.error().message);
+                set.unknowns.push_back("The .pak could not be read: " + source.error().describe());
             } else {
                 set.pak = parsePak(*source.value());
                 if (set.pak->status == ParseStatus::Malformed) {
