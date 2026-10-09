@@ -132,6 +132,35 @@ Controls: **D-pad / left stick** move, **✕** select, **○** back,
 * They will be installed as overlays only (Phase 5). Original files are never
   touched.
 
+### How Akeno decides (no PC needed)
+
+Every download is unpacked into staging and compared with the installed game's own files:
+packaging folders are separated from game paths, Unreal `.pak`/`.utoc`/`.ucas` sets are parsed
+and verified (versions, container ids, chunk hashes, package names and imports), and the result
+is assessed as `VERIFIED_PS5`, `LIKELY_COMPATIBLE`, `EXPERIMENTAL`, `NEEDS_CONVERSION`,
+`REQUIRES_UNSUPPORTED_LOADER`, `INCOMPATIBLE` or `UNKNOWN`, with the installation path, the
+game's loading support and PS5 compatibility shown separately. Mods from PC sites are analysed
+and explained, but only activated with recorded evidence for the exact game version. See
+[docs/compatibility-engine.md](docs/compatibility-engine.md).
+
+### Testing PC mods (Unreal Engine)
+
+Whether a PS5 build loads a PC mod's package files is something only the console can show
+([research](docs/investigations/pc-unreal-mods-on-ps5.md)). For **data-only** Unreal mods (for
+example gameplay-value changes such as Better Carry Weight x10) whose every console-side check
+passes, the check screen offers a **test install**:
+
+1. Back up the game's saved data.
+2. Downloads → open the mod → **CROSS: Test install** (files go to `<project>/content/paks/~mods`)
+   or **SQUARE: Test in Paks** (directly in `<project>/content/paks`), then confirm.
+3. Start the game and look for the mod's effect.
+4. Installed Mods → **OPTIONS** → *It works*, *No effect in the game* or *The game crashed or did
+   not start*. A crash turns the mod off and keeps it off; *it works* is kept as evidence for that
+   game version.
+
+Not offered for mods with textures, meshes, audio or shaders (PC formats), code or loaders
+(UE4SS, DLLs), encrypted containers, signed games, or files that would replace game files.
+
 ## Unsupported mod types
 
 * Anything that ships native code: Windows `.exe` / `.dll` (e.g. `dinput8.dll`,
@@ -204,7 +233,7 @@ cmake --build build-ps5   # -> build-ps5/dist/
 | 5 | ShadowMountPlus overlay, Vanilla | implemented in 0.2.0-alpha; overlay for a test title hardware tested (12.20), real mods not yet |
 | 6 | Load order, profiles, dependencies | planned |
 | 7 | Nexus Mods, mod.io | Nexus Mods (Premium downloads, [docs/nexus-mods.md](docs/nexus-mods.md)) and GameBanana (free, opt-in, [docs/gamebanana.md](docs/gamebanana.md)) implemented, not hardware tested; mod.io planned |
-| 8 | Advanced compatibility (Unreal) | planned |
+| 8 | Advanced compatibility (Unreal) | layout mapping, Unreal container analysis and the compatibility engine implemented and host tested; no game-specific adapter or conversion yet |
 
 ## Known limitations
 

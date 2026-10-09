@@ -159,11 +159,21 @@ completed download → inspect headers (pass 1) → free space → journal begin
   `SafeFs`; sizes are counted, never trusted; permissions, owners and times
   from the archive are ignored. On any failure the staging folder is
   removed.
-* `mods::analyzeMod` classifies files by magic bytes first (PE, ELF, SELF,
-  `#!`), then by name, maps `archiveRoot`/`targetPrefix` to install paths and
-  reports findings (blocker, warning, info). Analysis can make a label
-  worse, never better.
-* `mods::planInstall` describes the Phase 5 steps. Nothing executes it.
+* `mods::prepareMod` (shared with the installer) lists the installed game's
+  physical folder read-only (`games::probeGameTree`), decides where each file
+  goes (`mods::analyzeLayout`: packaging folders, Unreal project layouts,
+  game-root folders; confidence `none` to `established`), classifies files
+  by magic bytes first (PE, ELF, SELF, `#!`) and then by name
+  (`mods::analyzeMod`), parses Unreal containers (`unreal::analyzeUnreal`:
+  pak, IoStore, Zen package headers, recomputed chunk hashes), reads the
+  game's own container headers (`unreal::probeGameUnreal`), and assesses the
+  result (`compatibility::assess`: outcome, category A-D, mapping confidence,
+  game loading, platform compatibility, activation). See
+  `docs/compatibility-engine.md`.
+* `mods::planInstall` describes the Phase 5 steps, additions and
+  replacements, overlaps with installed mods, space and verification.
+  Nothing executes it; `storeMod` refuses anything the assessment does not
+  allow.
 * The check refuses to start while an interrupted operation is unresolved, so
   the recovery journal is never overwritten.
 
@@ -228,4 +238,4 @@ See `docs/shadowmount.md` for the overlay contract and
 | 5 | Overlay generation and activation, rollback, vanilla | not started |
 | 6 | Load order, profiles, dependencies | not started |
 | 7 | Nexus, mod.io | not started |
-| 8 | Unreal analysis, PC-mod classification | not started |
+| 8 | Unreal analysis, PC-mod classification | container analysis, layout mapping and compatibility engine implemented (host tested); no game adapter or conversion yet |

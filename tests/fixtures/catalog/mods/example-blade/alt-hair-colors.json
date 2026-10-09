@@ -27,8 +27,8 @@
   },
   "download": {
     "url": "http://127.0.0.1:10101/files/example-blade-alt-hair-colors-2.0.0.zip",
-    "size": 255,
-    "sha256": "efe4f56a6bacc189297cd7130e68bc2d0e4a9c0ef0b9fecde55e35c256d6445e",
+    "size": 391,
+    "sha256": "80d17e00a7a032d4fc5f8999aedb84b0b69dae5d135386f9aed3efbd49fa162a",
     "format": "zip"
   },
   "installation": {

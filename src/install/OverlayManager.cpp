@@ -3,18 +3,24 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <map>
 #include <set>
 #include <system_error>
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "akeno/archives/SecureExtractor.hpp"
 #include "akeno/core/Json.hpp"
 #include "akeno/core/Strings.hpp"
+#include "akeno/install/InstallLog.hpp"
 #include "akeno/logging/Logger.hpp"
 #include "akeno/mods/ModAnalyzer.hpp"
 #include "akeno/mods/ModCheck.hpp"
+#include "akeno/mods/ModPreparation.hpp"
 #include "akeno/security/PathGuard.hpp"
 #include "akeno/security/Sha256.hpp"
 
@@ -82,6 +88,48 @@ bool existsNoFollow(const fs::path& path) {
     return ::lstat(path.c_str(), &info) == 0;
 }
 
+// ENOENT below a readable game root means a new path; other lookup failures do not.
+Result<bool> gamePathExists(const fs::path& root, const std::string& relative) {
+    auto normalized = security::normalizeAbsolute(root.string());
+    if (!normalized || !isSafeRelativePath(relative)) {
+        return makeError(ErrorCode::SafetyViolation, "The game file mapping is not a safe absolute/relative path pair.");
+    }
+    struct stat info {};
+    if (::lstat(root.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
+        return makeError(ErrorCode::SafetyViolation, "The game's folder cannot be inspected; PC replacements cannot be ruled out.");
+    }
+    fs::path current = root;
+    const fs::path rel(relative);
+    for (auto it = rel.begin(); it != rel.end(); ++it) {
+        current /= *it;
+        if (::lstat(current.c_str(), &info) != 0) {
+            if (errno == ENOENT) return false;
+            return makeError(ErrorCode::IoError, "A game path could not be inspected.", relative);
+        }
+        if (S_ISLNK(info.st_mode) || (std::next(it) != rel.end() && !S_ISDIR(info.st_mode))) {
+            return makeError(ErrorCode::SafetyViolation, "A game path contains a link or a non-directory parent.", relative);
+        }
+    }
+    return true;
+}
+
+Result<std::string> fileHead(const fs::path& path) {
+    const int fd = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return makeError(ErrorCode::IoError, "Could not inspect an overlay file.", path.string());
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
+        ::close(fd);
+        return makeError(ErrorCode::SafetyViolation, "An overlay entry is not a regular file.", path.string());
+    }
+    std::string head(archives::kHeadBytes, '\0');
+    ssize_t count;
+    do { count = ::read(fd, head.data(), head.size()); } while (count < 0 && errno == EINTR);
+    ::close(fd);
+    if (count < 0) return makeError(ErrorCode::IoError, "Could not read an overlay file.", path.string());
+    head.resize(static_cast<std::size_t>(count));
+    return head;
+}
+
 json::Json toJson(const TitleState& state) {
     json::Json mods = json::Json::array();
     for (const auto& mod : state.mods) {
@@ -92,15 +140,33 @@ json::Json toJson(const TitleState& state) {
                              {"size", file.size},
                              {"sha256", file.sha256}});
         }
-        mods.push_back({{"downloadId", mod.downloadId},
-                        {"provider", mod.mod.providerId},
-                        {"modId", mod.mod.modId},
-                        {"name", mod.name},
-                        {"version", mod.version},
-                        {"enabled", mod.enabled},
-                        {"bytes", mod.bytes},
-                        {"installedAt", mod.installedAt},
-                        {"files", std::move(files)}});
+        json::Json entry = {{"downloadId", mod.downloadId},
+                            {"provider", mod.mod.providerId},
+                            {"modId", mod.mod.modId},
+                            {"name", mod.name},
+                            {"version", mod.version},
+                            {"enabled", mod.enabled},
+                            {"pcSource", mod.pcSource},
+                            {"bytes", mod.bytes},
+                            {"installedAt", mod.installedAt},
+                            {"archiveSha256", mod.archiveSha256},
+                            {"gameVersion", mod.gameVersion},
+                            {"files", std::move(files)}};
+        if (mod.activationRecorded) {
+            entry["activation"] = {{"allowed", mod.activationAllowed},
+                                   {"outcome", mod.outcome},
+                                   {"mappingConfidence", mod.mappingConfidence},
+                                   {"mappingRule", mod.mappingRule},
+                                   {"archiveRoot", mod.archiveRoot},
+                                   {"targetPrefix", mod.targetPrefix}};
+            if (mod.test) {
+                entry["activation"]["test"] = true;
+                entry["activation"]["placement"] = std::string(toString(mod.testPlacement));
+                entry["activation"]["assessedOutcome"] = mod.assessedOutcome;
+                entry["testResult"] = {{"result", std::string(toString(mod.testResult))}, {"reportedAt", mod.testReportedAt}};
+            }
+        }
+        mods.push_back(std::move(entry));
     }
     return {{"schemaVersion", TitleState::kSchemaVersion},
             {"titleId", state.titleId},
@@ -135,11 +201,38 @@ Result<TitleState> fromJson(const json::Json& root, const std::string& titleId) 
         mod.downloadId = json::getString(item, "downloadId").value_or("");
         if (!isSafeId(mod.downloadId)) return invalid("a mod has an invalid id");
         mod.mod.providerId = json::getString(item, "provider").value_or("");
+        mod.pcSource = json::getBool(item, "pcSource").value_or(false) ||
+                       mod.mod.providerId == "nexus" || mod.mod.providerId == "gamebanana";
         mod.mod.modId = json::getString(item, "modId").value_or("");
         mod.name = json::getString(item, "name").value_or(mod.downloadId);
         mod.version = json::getString(item, "version").value_or("");
         mod.enabled = json::getBool(item, "enabled").value_or(false);
         mod.installedAt = json::getString(item, "installedAt").value_or("");
+        mod.archiveSha256 = json::getString(item, "archiveSha256").value_or("");
+        if (!mod.archiveSha256.empty() && !security::isSha256Hex(mod.archiveSha256)) return invalid("a mod has an invalid archive hash");
+        if (const json::Json* activation = json::getObject(item, "activation")) {
+            mod.activationRecorded = true;
+            mod.activationAllowed = json::getBool(*activation, "allowed").value_or(false);
+            mod.outcome = json::displayString(*activation, "outcome", {}, 64);
+            mod.mappingConfidence = json::displayString(*activation, "mappingConfidence", {}, 32);
+            mod.mappingRule = json::displayString(*activation, "mappingRule", {}, 32);
+            mod.archiveRoot = json::displayString(*activation, "archiveRoot", {}, kMaxPathBytes);
+            mod.targetPrefix = json::displayString(*activation, "targetPrefix", {}, kMaxPathBytes);
+            mod.test = json::getBool(*activation, "test").value_or(false);
+            if (mod.test) {
+                auto placement = parseTestPlacement(json::getString(*activation, "placement").value_or(""));
+                if (!placement) return invalid("a test install has an unknown placement");
+                mod.testPlacement = *placement;
+                mod.assessedOutcome = json::displayString(*activation, "assessedOutcome", {}, 64);
+                const json::Json* report = json::getObject(item, "testResult");
+                auto result = parseTestResult(report != nullptr ? json::getString(*report, "result").value_or("untested")
+                                                                : std::string("untested"));
+                if (!result) return invalid("a test install has an unknown result");
+                mod.testResult = *result;
+                if (report != nullptr) mod.testReportedAt = json::displayString(*report, "reportedAt", {}, 64);
+            }
+        }
+        mod.gameVersion = json::displayString(item, "gameVersion", {}, 64);
         const json::Json* files = json::getArray(item, "files");
         if (files == nullptr) return invalid("a mod has no file list");
         for (const auto& entry : *files) {
@@ -276,6 +369,26 @@ const InstalledMod* TitleState::find(const std::string& downloadId) const {
     return nullptr;
 }
 
+std::vector<TestRecord> TitleState::testRecords() const {
+    std::vector<TestRecord> records;
+    for (const auto& mod : mods) {
+        if (!mod.test) continue;
+        TestRecord record;
+        record.titleId = titleId;
+        record.provider = mod.mod.providerId;
+        record.modId = mod.mod.modId;
+        record.modVersion = mod.version;
+        record.name = mod.name;
+        record.gameVersion = mod.gameVersion;
+        if (!mod.files.empty()) record.directory = fs::path(mod.files.front().installPath).parent_path().generic_string();
+        record.placement = mod.testPlacement;
+        record.result = mod.testResult;
+        record.reportedAt = mod.testReportedAt;
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
 fs::path statePath(const AppPaths& paths, const std::string& titleId) {
     return paths.mods() / titleId / "state.json";
 }
@@ -310,7 +423,25 @@ Result<TitleState> loadTitleState(const InstallEnvironment& env, const std::stri
     return state;
 }
 
+namespace {
+
+std::string requestContext(const InstallRequest& request) {
+    return strings::concat("title=", request.titleId, " game-version=", request.gameVersion.empty() ? "unknown" : request.gameVersion,
+                           " provider=", request.mod.providerId, " mod=", request.mod.modId, " mod-version=", request.version,
+                           " download=", request.downloadId,
+                           " archive-sha256=", request.archiveSha256.empty() ? "not-recorded" : request.archiveSha256);
+}
+
+std::string joinReasons(const std::vector<std::string>& reasons) {
+    std::string text;
+    for (const auto& reason : reasons) text += text.empty() ? reason : " / " + reason;
+    return text;
+}
+
+}  // namespace
+
 Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment& env) {
+    const std::string context = requestContext(request);
     AKENO_TRY(checkCommon(env, request.titleId));
     if (!isSafeId(request.downloadId)) {
         return makeError(ErrorCode::InvalidArgument, "The download id is not valid.", request.downloadId);
@@ -318,13 +449,27 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
     auto loaded = loadTitleState(env, request.titleId);
     if (!loaded) return std::move(loaded).error();
     TitleState state = std::move(loaded).value();
-    if (state.find(request.downloadId) != nullptr) {
-        return makeError(ErrorCode::AlreadyExists, "This download is already installed for the game.");
+    // The same download is replaced when an older version stored it without a checked path, or
+    // when it is a test install and this is a test in the other placement. Its stored copy is
+    // overwritten at the store step; nothing changes before.
+    bool replacesExisting = false;
+    if (const InstalledMod* existing = state.find(request.downloadId)) {
+        const bool legacy = existing->pcSource && !existing->activationRecorded;
+        const bool otherPlacement = existing->test && request.test && existing->testPlacement != request.placement;
+        if (!legacy && !otherPlacement) {
+            return makeError(ErrorCode::AlreadyExists, "This download is already installed for the game.");
+        }
+        replacesExisting = true;
     }
+    logStage(Stage::DownloadComplete, StageResult::Ok, context,
+             request.archiveSha256.empty() ? "verified when it was downloaded" : "SHA-256 verified when it was downloaded");
 
     archives::SecureExtractor extractor(env.fs);
     auto listing = extractor.inspect(request.archive, request.format);
-    if (!listing) return std::move(listing).error();
+    if (!listing) {
+        logStage(Stage::ArchiveChecked, StageResult::Failed, context, listing.error().describe());
+        return std::move(listing).error();
+    }
     AKENO_TRY(checkSpace(env, env.paths.mods(), listing->totalBytes, "to keep this mod"));
 
     const std::string operationId =
@@ -348,30 +493,81 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
 
     (void)env.journal.recordStep("extract");
     auto tree = extractor.extract(request.archive, request.format, work / "files");
-    if (!tree) return fail(std::move(tree).error());
+    if (!tree) {
+        logStage(Stage::ArchiveChecked, StageResult::Failed, context, tree.error().describe());
+        return fail(std::move(tree).error());
+    }
 
-    mods::AnalysisInput input;
-    input.files = tree->files;
-    input.archiveRoot = request.archiveRoot;
-    input.targetPrefix = request.targetPrefix;
-    input.titleId = request.titleId;
-    input.sourceType = request.sourceType;
-    input.catalogueStatus = request.catalogueStatus;
-    input.catalogueInstallable = request.catalogueInstallable;
-    const mods::ModAnalysis analysis = mods::analyzeMod(input);
-    if (!analysis.installable) {
-        std::string why = "its compatibility label is " + std::string(mods::toString(analysis.status));
+    // The same preparation the check showed: layout, content, containers, compatibility.
+    const bool curated = request.curated || mods::isCuratedProvider(request.mod.providerId);
+    const bool pcSource = request.pcSource || mods::isPcProvider(request.mod.providerId);
+    mods::PreparationRequest prep;
+    prep.files = tree->files;
+    prep.extractedRoot = work / "files";
+    prep.game = mods::GameContext{request.titleId, request.gameVersion, request.contentId, request.sourceType,
+                                  request.installedPkg, request.gameFolder};
+    prep.provider = request.mod.providerId;
+    prep.modId = request.mod.modId;
+    prep.modVersion = request.version;
+    prep.curated = curated && !pcSource;
+    prep.pcSource = pcSource;
+    if (prep.curated) prep.manifestArchiveRoot = request.archiveRoot;
+    prep.manifestTargetPrefix = request.targetPrefix;
+    prep.catalogueStatus = request.catalogueStatus;
+    prep.catalogueInstallable = request.catalogueInstallable;
+    prep.registry = env.registry;
+    prep.paksFolderPlacement = request.test && request.placement == TestPlacement::PaksFolder;
+    for (const auto& other : state.mods) {
+        if (other.downloadId == request.downloadId) continue;  // the copy being replaced
+        mods::InstalledModPaths paths{other.downloadId, other.name, {}};
+        for (const auto& file : other.files) paths.installPaths.push_back(file.installPath);
+        prep.installedMods.push_back(std::move(paths));
+    }
+    const mods::Preparation prepared = mods::prepareMod(prep);
+    const mods::ModAnalysis& analysis = prepared.analysis;
+    const compatibility::Assessment& assessment = prepared.assessment;
+    const std::string decision = strings::concat(
+        "outcome ", compatibility::toString(assessment.outcome), ", category ", compatibility::toString(assessment.category),
+        ", mapping ", mods::toString(assessment.mappingConfidence), " (rule ", prepared.layout.rule, ", archive root '",
+        prepared.layout.archiveRoot, "' -> '", prepared.layout.targetPrefix, "'), loading ",
+        compatibility::toString(assessment.loading), ", platform ", compatibility::toString(assessment.platform));
+    // A test install is the user's decision to take the risks the check could not rule out; it
+    // never overrides a reason that rules out the test itself.
+    const bool testInstall = request.test && !assessment.activationAllowed;
+    std::vector<std::string> refusal;
+    if (testInstall) {
+        refusal = assessment.testBlockers;
+        if (!assessment.testInstallAvailable && refusal.empty()) refusal.push_back("A test install is not offered for this mod.");
+        if (request.placement == TestPlacement::PaksFolder && !prepared.placementApplied) {
+            refusal.push_back("The package-folder placement applies only to package files that the check puts into ~mods.");
+        }
+    } else if (!assessment.activationAllowed) {
+        refusal = assessment.blockedReasons;
+        if (refusal.empty()) refusal.push_back("its compatibility is " + std::string(compatibility::toString(assessment.outcome)));
+    }
+    if (refusal.empty() && analysis.hasBlockers()) {
         for (const auto& finding : analysis.findings) {
             if (finding.level == mods::FindingLevel::Blocker) {
-                why = finding.message;
+                refusal.push_back(finding.message);
                 break;
             }
         }
-        return fail(makeError(ErrorCode::SafetyViolation, "This mod cannot be installed: " + why));
     }
+    if (!refusal.empty()) {
+        logStage(Stage::ArchiveChecked, StageResult::Refused, context,
+                 decision + (testInstall ? "; test install rejected because: " : "; rejected because: ") + joinReasons(refusal));
+        return fail(makeError(ErrorCode::SafetyViolation,
+                              (testInstall ? "This mod cannot be installed as a test: " : "This mod cannot be installed: ") +
+                                  refusal.front()));
+    }
+    logStage(Stage::ArchiveChecked, StageResult::Ok, context,
+             strings::concat(decision, "; ", analysis.installCount, " files to install",
+                             testInstall ? std::string("; TEST INSTALL confirmed by the user, placement ") +
+                                               std::string(toString(request.placement))
+                                         : std::string()));
 
-    if (request.pcSource) {
-        // Replacing a game file with its PC version crashed a PS5 (2026-10-07): PC mods may only add.
+    if (pcSource) {
+        // A PC replacement has no established PS5 data-format compatibility.
         if (request.gameFolder.empty()) {
             return fail(makeError(ErrorCode::Unsupported,
                                   "This is a PC mod, and Akeno cannot see this game's files to make sure it replaces "
@@ -381,11 +577,15 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
         std::string example;
         for (const auto& file : analysis.files) {
             if (file.installPath.empty()) continue;
-            if (existsNoFollow(fs::path(request.gameFolder) / file.installPath)) {
+            auto exists = gamePathExists(request.gameFolder, file.installPath);
+            if (!exists) return fail(exists.error());
+            if (exists.value()) {
                 if (replaced++ == 0) example = file.installPath;
             }
         }
         if (replaced > 0) {
+            logStage(Stage::ArchiveChecked, StageResult::Refused, context,
+                     strings::concat("would replace ", replaced, " game file(s), e.g. ", example));
             return fail(makeError(ErrorCode::SafetyViolation,
                                   strings::concat("This PC mod would replace ", replaced,
                                                   " of the game's own files with PC versions, which can crash the "
@@ -399,8 +599,21 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
     mod.mod = request.mod;
     mod.name = request.name;
     mod.version = request.version;
+    mod.pcSource = pcSource;
     mod.enabled = true;
     mod.installedAt = strings::utcTimestamp();
+    mod.archiveSha256 = security::isSha256Hex(request.archiveSha256) ? request.archiveSha256 : std::string();
+    mod.activationRecorded = true;
+    mod.activationAllowed = assessment.activationAllowed || testInstall;
+    mod.assessedOutcome = std::string(compatibility::toString(assessment.outcome));
+    mod.outcome = testInstall ? std::string(compatibility::toString(compatibility::Outcome::Experimental)) : mod.assessedOutcome;
+    mod.test = testInstall;
+    mod.testPlacement = request.placement;
+    mod.gameVersion = request.gameVersion;
+    mod.mappingConfidence = std::string(mods::toString(assessment.mappingConfidence));
+    mod.mappingRule = prepared.layout.rule;
+    mod.archiveRoot = prepared.layout.archiveRoot;
+    mod.targetPrefix = prepared.layout.targetPrefix;
     for (const auto& file : analysis.files) {
         if (file.installPath.empty()) continue;
         if (!isSafeRelativePath(file.installPath) || isReservedTopLevel(file.installPath)) {
@@ -415,19 +628,34 @@ Result<InstalledMod> storeMod(const InstallRequest& request, InstallEnvironment&
     const fs::path destination = env.paths.mods() / request.titleId / request.downloadId;
     if (auto made = env.fs.createDirectories(destination.parent_path()); !made) return fail(made.error());
     if (existsNoFollow(destination)) {
-        // Left by an earlier attempt that never reached the state file.
+        // Left by an earlier attempt that never reached the state file, or the legacy copy replaced here.
         if (auto removed = env.fs.removeTree(destination); !removed) return fail(removed.error());
     }
-    if (auto moved = env.fs.rename(work, destination); !moved) return fail(moved.error());
+    if (auto moved = env.fs.rename(work, destination); !moved) {
+        logStage(Stage::FilesInstalled, StageResult::Failed, context, moved.error().describe());
+        return fail(moved.error());
+    }
+    if (replacesExisting) {
+        state.mods.erase(std::remove_if(state.mods.begin(), state.mods.end(),
+                                        [&](const InstalledMod& old) { return old.downloadId == request.downloadId; }),
+                         state.mods.end());
+        logger().info("install", request.downloadId + ": replaces the stored copy of the same download");
+    }
     state.mods.push_back(mod);
     if (auto saved = saveState(env, state); !saved) {
         (void)env.fs.removeTree(destination);
         (void)env.journal.complete();
+        logStage(Stage::FilesInstalled, StageResult::RolledBack, context,
+                 "the list of installed mods could not be saved; the stored copy was removed: " + saved.error().describe());
         return saved.error();
     }
     (void)env.journal.complete();
-    logger().info("install", strings::concat(request.titleId, ": stored ", mod.name, " (", mod.files.size(),
-                                             " files, ", strings::formatBytes(mod.bytes), ")"));
+    logStage(Stage::FilesInstalled, StageResult::Ok, context,
+             strings::concat(mod.files.size(), " files, ", strings::formatBytes(mod.bytes), ", SHA-256 of every file recorded, in ",
+                             destination.string()));
+    for (std::size_t i = 0; i < mod.files.size() && i < 50; ++i) {
+        logger().info("install", "  mapped " + mod.files[i].storePath + " -> " + mod.files[i].installPath);
+    }
     return mod;
 }
 
@@ -457,6 +685,28 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
                          backport.string());
     }
 
+    // A PC mod is activated only with a recorded, positive decision (or a test the user confirmed
+    // and has not reported as crashing). Others are turned off, not activated, and the rest of the
+    // overlay is applied regardless: one old mod must not keep every other mod of the game off.
+    ApplyResult result;
+    for (auto& mod : state.mods) {
+        if (!mod.enabled) continue;
+        std::string why;
+        if (mod.pcSource && !mod.activationRecorded) {
+            why = mod.name + " was turned off: an older Akeno installed it without a checked installation path" +
+                  (mod.files.empty() ? std::string() : " (it put " + mod.files.front().installPath + " into the overlay)") +
+                  ". Remove it and install it again from Downloads to check it, or to test it.";
+        } else if (mod.activationRecorded && !mod.activationAllowed) {
+            why = mod.name + " was turned off: its check does not allow activating it.";
+        } else if (mod.test && mod.testResult == TestResult::Crashed) {
+            why = mod.name + " was turned off: you reported that it crashed the game.";
+        }
+        if (why.empty()) continue;
+        mod.enabled = false;
+        logStage(Stage::OverlayPublished, StageResult::Refused, "title=" + titleId + " download=" + mod.downloadId, why);
+        result.turnedOff.push_back(std::move(why));
+    }
+    if (!result.turnedOff.empty()) AKENO_TRY(saveState(env, state));
     std::vector<const InstalledMod*> enabled;
     std::uint64_t bytes = 0;
     for (const auto& mod : state.mods) {
@@ -464,7 +714,7 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
         enabled.push_back(&mod);
         bytes += mod.bytes;
     }
-    ApplyResult result;
+    const std::string context = strings::concat("title=", titleId, " mods=", enabled.size(), " backport=", backportPath(env, titleId).string());
     result.backport = backport;
     result.mods = enabled.size();
     result.vanilla = enabled.empty();
@@ -493,6 +743,8 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
     op.stagingPaths = {work};
     AKENO_TRY(env.journal.begin(op));
     auto fail = [&](Error error) -> Error {
+        logStage(Stage::OverlayPublished, StageResult::Failed, context,
+                 error.describe() + "; the published overlay was not changed");
         if (auto removed = env.fs.removeTree(work); !removed) {
             logger().error("install", "could not delete " + work.string() + ": " + removed.error().describe());
             return error;
@@ -502,16 +754,46 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
     };
 
     if (!enabled.empty()) {
-        (void)env.journal.recordStep("build");
+        if (auto recorded = env.journal.recordStep("build"); !recorded) return fail(recorded.error());
         if (auto space = checkSpace(env, env.paths.staging(), bytes, "to build the overlay"); !space) {
             return fail(space.error());
         }
         if (auto made = env.fs.createDirectories(next); !made) return fail(made.error());
         std::set<std::string> written;
+        std::map<std::string, std::string> spellings;
         for (const InstalledMod* mod : enabled) {
             const fs::path store = env.paths.mods() / titleId / mod->downloadId / "files";
             for (const StoredFile& file : mod->files) {
                 const fs::path source = store / file.storePath;
+                if (auto safe = env.fs.guard().checkWritable(source); !safe) return fail(safe.error());
+                auto head = fileHead(source);
+                if (!head) return fail(head.error());
+                mods::AnalysisInput input;
+                input.files.push_back({file.storePath, file.size, file.sha256, head.value()});
+                const auto analysis = mods::analyzeMod(input);
+                for (const auto& finding : analysis.findings) {
+                    if (finding.level == mods::FindingLevel::Blocker) {
+                        return fail(makeError(ErrorCode::SafetyViolation,
+                                              "A stored mod no longer passes compatibility checks: " + finding.message,
+                                              file.storePath));
+                    }
+                }
+                if (mod->pcSource) {
+                    auto exists = gamePathExists(target.installPath, file.installPath);
+                    if (!exists) return fail(exists.error());
+                    if (exists.value()) return fail(makeError(ErrorCode::SafetyViolation,
+                        "A stored PC mod would replace a game file; activation was refused.", file.installPath));
+                }
+                // Check directory spellings too: Data/a + data/b is also ambiguous.
+                fs::path prefix;
+                for (const auto& part : fs::path(file.installPath)) {
+                    prefix /= part;
+                    auto [it, inserted] = spellings.emplace(lower(prefix.string()), prefix.string());
+                    if (!inserted && it->second != prefix.string()) {
+                        return fail(makeError(ErrorCode::SafetyViolation,
+                                              "Overlay paths differ only in upper/lower case.", prefix.string()));
+                    }
+                }
                 auto hash = security::sha256File(source);
                 if (!hash || hash.value() != file.sha256) {
                     return fail(makeError(ErrorCode::SchemaError,
@@ -529,27 +811,59 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
                     if (auto removed = env.fs.removeFile(destination); !removed) return fail(removed.error());
                 }
                 if (auto copied = env.fs.copyFile(source, destination); !copied) return fail(copied.error());
+                auto copiedHash = security::sha256File(destination);
+                if (!copiedHash || copiedHash.value() != file.sha256) {
+                    return fail(makeError(ErrorCode::SchemaError, "An overlay copy failed verification.", file.installPath));
+                }
                 written.insert(lower(file.installPath));
                 ++result.files;
                 result.bytes += file.size;
             }
         }
-        (void)env.journal.recordStep("validate");
+        if (auto recorded = env.journal.recordStep("validate"); !recorded) return fail(recorded.error());
         std::size_t entries = 0;
         if (auto scanned = scanTree(next, entries, 0); !scanned) return fail(scanned.error());
         if (target.installedPkg && entries > kPackageRedirectLimit) {
             return fail(makeError(ErrorCode::Unsupported,
                                   strings::concat("For an installed package ShadowMountPlus can redirect at most ",
-                                                  kPackageRedirectLimit, " files and folders; these mods need ",
-                                                  entries, ".")));
+                                                  kPackageRedirectLimit, " redirects. This overlay has ", entries,
+                                                  " files and folders (a conservative upper bound, not an exact "
+                                                  "redirect count); it cannot be approved without the game tree.")));
         }
     }
 
-    // From here the live overlay changes. Each rename is atomic; a crash between them leaves no
-    // backport at all, which is the unmodified game.
+    // From here the published overlay changes. Each rename is atomic; a crash between them
+    // leaves no Akeno backport at this location. Other scan roots/mounted layers are unknown.
     if (auto made = env.fs.createDirectories(work); !made) return fail(made.error());
-    (void)env.journal.markOverlayTouched();
-    (void)env.journal.recordStep("swap");
+    if (auto recorded = env.journal.markOverlayTouched(); !recorded) return fail(recorded.error());
+    if (auto recorded = env.journal.recordStep("swap"); !recorded) return fail(recorded.error());
+    const TitleState originalState = state;
+    // Never remove `previous` if restoring the old overlay or its ownership state fails.
+    auto restore = [&](Error error) -> Error {
+        if (backportExists) {
+            if (auto restored = titleFs.rename(previous, backport); !restored) {
+                logger().error("install", "previous overlay retained for recovery: " + restored.error().describe());
+                logStage(Stage::OverlayPublished, StageResult::Failed, context,
+                         error.describe() + "; restoring the previous overlay failed, it is kept in " + previous.string() +
+                             " and the recovery journal is kept");
+                return error;
+            }
+        }
+        if (auto saved = saveState(env, originalState); !saved) {
+            logger().error("install", "overlay ownership needs recovery: " + saved.error().describe());
+            logStage(Stage::OverlayPublished, StageResult::Failed, context,
+                     error.describe() + "; the previous overlay is back but its ownership record could not be restored");
+            return error;
+        }
+        logStage(Stage::OverlayPublished, StageResult::RolledBack, context,
+                 error.describe() + "; the previous overlay and its record were restored");
+        if (auto removed = env.fs.removeTree(work); !removed) {
+            logger().error("install", "could not delete " + work.string() + ": " + removed.error().describe());
+            return error;
+        }
+        (void)env.journal.complete();
+        return error;
+    };
     if (backportExists) {
         if (auto moved = titleFs.rename(backport, previous); !moved) return fail(moved.error());
     }
@@ -557,23 +871,17 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
         // Record the new overlay first: a rename keeps the folder's identity, so after a crash the
         // state either matches the folder in place or finds none (Vanilla), never a stranger.
         auto identity = identityOf(next);
-        if (!identity) return fail(makeError(ErrorCode::IoError, "The new overlay cannot be found.", next.string()));
+        if (!identity) return restore(makeError(ErrorCode::IoError, "The new overlay cannot be found.", next.string()));
         state.overlayActive = true;
         state.backportPath = backport.string();
         state.backportDevice = identity->device;
         state.backportInode = identity->inode;
         state.appliedAt = strings::utcTimestamp();
         if (auto saved = saveState(env, state); !saved) {
-            if (backportExists) (void)titleFs.rename(previous, backport);
-            return fail(saved.error());
+            return restore(saved.error());
         }
         if (auto moved = titleFs.rename(next, backport); !moved) {
-            if (backportExists) {
-                if (auto restored = titleFs.rename(previous, backport); !restored) {
-                    logger().error("install", "could not restore the previous overlay: " + restored.error().describe());
-                }
-            }
-            return fail(moved.error());
+            return restore(moved.error());
         }
     } else {
         state.overlayActive = false;
@@ -596,6 +904,14 @@ Result<ApplyResult> applyOverlay(const TitleTarget& target, InstallEnvironment& 
                                  ? titleId + ": Vanilla, Akeno's overlay was removed"
                                  : strings::concat(titleId, ": overlay applied, ", result.mods, " mods, ", result.files,
                                                    " files, ", strings::formatBytes(result.bytes)));
+    if (enabled.empty()) {
+        logStage(Stage::OverlayPublished, StageResult::Ok, context, "Vanilla: Akeno's overlay folder was removed");
+    } else {
+        logStage(Stage::OverlayPublished, StageResult::Ok, context,
+                 strings::concat(result.files, " files, ", strings::formatBytes(result.bytes),
+                                 ", every copy verified by SHA-256; ShadowMountPlus applies it at the next game start"));
+        logUnobservedStages(context);
+    }
     return result;
 }
 
@@ -613,12 +929,21 @@ Status setModEnabled(InstallEnvironment& env, const std::string& titleId, const 
 }
 
 Result<ApplyResult> setVanilla(const TitleTarget& target, InstallEnvironment& env) {
+    AKENO_TRY(checkCommon(env, target.titleId));
+    if (target.mounted) return makeError(ErrorCode::Busy, "The game is running or mounted. Close it, then try again.");
     auto loaded = loadTitleState(env, target.titleId);
     if (!loaded) return std::move(loaded).error();
     TitleState state = std::move(loaded).value();
+    const TitleState originalState = state;
     for (auto& mod : state.mods) mod.enabled = false;
     if (!state.mods.empty()) AKENO_TRY(saveState(env, state));
-    return applyOverlay(target, env);
+    auto applied = applyOverlay(target, env);
+    if (!applied && !state.mods.empty()) {
+        if (auto saved = saveState(env, originalState); !saved) {
+            logger().error("install", "could not restore mod selection: " + saved.error().describe());
+        }
+    }
+    return applied;
 }
 
 Status removeStoredMod(InstallEnvironment& env, const std::string& titleId, const std::string& downloadId) {
@@ -635,6 +960,30 @@ Status removeStoredMod(InstallEnvironment& env, const std::string& titleId, cons
     AKENO_TRY(env.fs.removeTree(env.paths.mods() / titleId / downloadId));
     state.mods.erase(it);
     return saveState(env, state);
+}
+
+Result<bool> reportTestResult(InstallEnvironment& env, const std::string& titleId, const std::string& downloadId,
+                              TestResult result) {
+    AKENO_TRY(checkCommon(env, titleId));
+    auto loaded = loadTitleState(env, titleId);
+    if (!loaded) return std::move(loaded).error();
+    TitleState state = std::move(loaded).value();
+    for (auto& mod : state.mods) {
+        if (mod.downloadId != downloadId) continue;
+        if (!mod.test) return makeError(ErrorCode::InvalidArgument, "Only test installs take a test result.", downloadId);
+        mod.testResult = result;
+        mod.testReportedAt = strings::utcTimestamp();
+        const bool turnOff = result == TestResult::Crashed && mod.enabled;
+        if (turnOff) mod.enabled = false;
+        AKENO_TRY(saveState(env, state));
+        logger().info("install", strings::concat("test report: title=", titleId, " game-version=",
+                                                 mod.gameVersion.empty() ? "unknown" : mod.gameVersion, " provider=",
+                                                 mod.mod.providerId, " mod=", mod.mod.modId, " mod-version=", mod.version,
+                                                 " placement=", toString(mod.testPlacement), " result=", toString(result),
+                                                 turnOff ? " (turned off)" : ""));
+        return turnOff;
+    }
+    return makeError(ErrorCode::NotFound, "This mod is not installed for the game.", downloadId);
 }
 
 }  // namespace akeno::install

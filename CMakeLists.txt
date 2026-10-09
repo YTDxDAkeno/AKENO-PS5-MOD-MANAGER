@@ -35,7 +35,7 @@ endif()
 set(AKENO_GIT_REVISION "unknown")
 find_package(Git QUIET)
 if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
                     OUTPUT_VARIABLE AKENO_GIT_REVISION
                     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -44,6 +44,21 @@ if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
         set(AKENO_GIT_REVISION "unknown")
     endif()
 endif()
+# Fingerprint actual compile inputs, including uncommitted code, independently of Git labels.
+file(GLOB_RECURSE AKENO_BUILD_INPUTS CONFIGURE_DEPENDS
+     "${CMAKE_SOURCE_DIR}/src/*" "${CMAKE_SOURCE_DIR}/include/*"
+     "${CMAKE_SOURCE_DIR}/cmake/*" "${CMAKE_SOURCE_DIR}/third_party/*"
+     "${CMAKE_SOURCE_DIR}/assets/*")
+list(APPEND AKENO_BUILD_INPUTS "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
+list(SORT AKENO_BUILD_INPUTS)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AKENO_BUILD_INPUTS})
+set(AKENO_SOURCE_HASH_INPUT "${CMAKE_CXX_COMPILER_ID};${CMAKE_CXX_COMPILER_VERSION};${CMAKE_BUILD_TYPE};${CMAKE_CXX_FLAGS};${CMAKE_CXX_FLAGS_DEBUG};${CMAKE_CXX_FLAGS_RELEASE};${CMAKE_CXX_FLAGS_RELWITHDEBINFO};${CMAKE_EXE_LINKER_FLAGS};${AKENO_TARGET_NAME};${AKENO_BUILD_APP};${AKENO_BUILD_TESTS};${AKENO_SANITIZE}")
+foreach(input IN LISTS AKENO_BUILD_INPUTS)
+    file(SHA256 "${input}" input_hash)
+    file(RELATIVE_PATH input_name "${CMAKE_SOURCE_DIR}" "${input}")
+    string(APPEND AKENO_SOURCE_HASH_INPUT "\n${input_name}:${input_hash}")
+endforeach()
+string(SHA256 AKENO_SOURCE_SHA256 "${AKENO_SOURCE_HASH_INPUT}")
 configure_file(src/core/BuildInfo.cpp.in "${CMAKE_BINARY_DIR}/generated/BuildInfo.cpp" @ONLY)
 
 # ------------------------------------------------------------------------- warnings
@@ -92,6 +107,11 @@ add_library(akeno_core STATIC
     src/security/SafeFs.cpp
     src/security/ImageProbe.cpp
     src/security/Sha256.cpp
+    src/security/Digests.cpp
+    src/unreal/CityHash.cpp
+    src/unreal/UnrealFormats.cpp
+    src/unreal/UnrealAnalyzer.cpp
+    src/security/SafeOpen.cpp
     src/platform/PlatformCommon.cpp
     src/network/Url.cpp
     src/network/Http.cpp
@@ -102,10 +122,12 @@ add_library(akeno_core STATIC
     src/games/GameInfo.cpp
     src/games/GameLibrary.cpp
     src/games/ParamJson.cpp
+    src/games/GameTree.cpp
     src/shadowmount/ShadowMountClient.cpp
     src/shadowmount/ShadowMountGameProvider.cpp
     src/mods/Catalog.cpp
     src/compatibility/CompatibilityRules.cpp
+    src/compatibility/CompatibilityEngine.cpp
     src/providers/AkenoCatalogProvider.cpp
     src/providers/NexusProvider.cpp
     src/providers/GameBananaProvider.cpp
@@ -114,8 +136,13 @@ add_library(akeno_core STATIC
     src/downloads/DownloadManager.cpp
     src/archives/SecureExtractor.cpp
     src/mods/ModAnalyzer.cpp
+    src/mods/ArchiveLayout.cpp
     src/mods/ModCheck.cpp
+    src/mods/ModPreparation.cpp
     src/install/OverlayManager.cpp
+    src/install/InstallLog.cpp
+    src/install/TestReports.cpp
+    src/diagnostics/DiagnosticExport.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp
     src/app/AppContext.cpp

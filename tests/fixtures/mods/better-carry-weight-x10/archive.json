@@ -1,0 +1,47 @@
+{
+  "description": "Structure of the Nexus Mods archive 'Better Carry Weight x10' for PPSA28000 as inspected on 2026-10-08. Metadata only: no bytes of the mod's files are in this repository. Tests rebuild synthetic containers with the same names and structure.",
+  "archive": {
+    "name": "dac30f1aa5840955.zip",
+    "size": 55481,
+    "sha256": "e2336589868e01896eaa42307bb32f8eb471dd83a4ce13d54238dd3cf4805d32",
+    "entries": [
+      {"path": "Better Carry Weight x10/", "type": "directory"},
+      {"path": "Better Carry Weight x10/00000000_BetterCarryWeightx10_P.pak", "size": 347,
+       "sha256": "75e7144577253917f6da7312ef5e585b12fb728226a22b0938323751a6b555cd"},
+      {"path": "Better Carry Weight x10/00000000_BetterCarryWeightx10_P.ucas", "size": 171112,
+       "sha256": "3f9c7aa88f741a9fa8a9d7eafb57d5bb2f0d0bf63cf4edccdba52303054aa2f4"},
+      {"path": "Better Carry Weight x10/00000000_BetterCarryWeightx10_P.utoc", "size": 368,
+       "sha256": "11bd5f9cd17c7ed4578475ecf6a70e236c61ff5f4ddb4fa7bd576158ec618f79"}
+    ]
+  },
+  "observed": {
+    "pak": {"version": 11, "mountPoint": "../../../", "entries": 0, "encryptedIndex": false,
+            "indexSha1Verified": true, "secondaryIndexSha1Verified": true},
+    "utoc": {"version": 8, "versionName": "ReplaceIoChunkHashWithIoHash", "containerId": "e4a7420854dad984",
+             "flags": ["indexed"], "compressionMethods": [], "compressionBlockSize": 65536, "partitions": 1,
+             "chunks": [
+               {"id": "7285fde174bd91f8", "type": "ExportBundleData", "length": 169752, "blake3_160Verified": true},
+               {"id": "e4a7420854dad984", "type": "ContainerHeader", "length": 1360, "blake3_160Verified": true}],
+             "directoryIndex": {"mountPoint": "../../../", "files": ["BP_PlayerCharacter.uasset"]}},
+    "ucas": {"bytes": 171112, "bytesRequiredByToc": 171112},
+    "containerHeader": {"signature": "IoCn", "version": 4, "containerId": "e4a7420854dad984",
+                        "packageIds": ["7285fde174bd91f8"]},
+    "package": {"name": "/Game/_Dawnwalker/Player/BP_PlayerCharacter", "layout": "UE 5.3+",
+                "flags": ["Cooked", "UnversionedProperties", "FilterEditorOnly"], "hasVersioningInfo": false,
+                "idMatchesCityHash64OfName": true, "importedPackageCount": 161,
+                "importedPackageExamples": ["/Game/_Dawnwalker/Player/MPC_Player",
+                                            "/Game/_Dawnwalker/Player/Effects/GE_Encumbered",
+                                            "/Game/_Dawnwalker/Player/DA_PlayerAbilityConfig"]}
+  },
+  "authorInstructions": "PC: <Game>/Dawnwalker/Content/Paks/~mods/",
+  "installedBy020alpha": "/data/homebrew/backports/PPSA28000/Better Carry Weight x10/ (wrapper copied verbatim)",
+  "ps5Game": {
+    "titleId": "PPSA28000",
+    "contentVersion": "01.005.000",
+    "sourceType": "folder",
+    "packageFolder": "dawnwalker/content/paks",
+    "containers": ["dawnwalker-ps5.pak (10244371082 bytes)", "dawnwalker-ps5.ucas (38212660416 bytes)",
+                   "dawnwalker-ps5.utoc (not reached by the time-limited export)"],
+    "note": "All observed game paths are lower-case."
+  }
+}

@@ -27,8 +27,8 @@
   },
   "download": {
     "url": "http://127.0.0.1:10101/files/example-blade-mystery-pack-0.1.zip",
-    "size": 457,
-    "sha256": "91e67ef2e0b4b55ee9fa3365a1e664510c6cf96908aee4d4d370afe9fba1d9d9",
+    "size": 577,
+    "sha256": "37312a2aa28937f1557d5d43587198272a2ce1b85a6008aaa1d5c6be48687448",
     "format": "zip"
   },
   "installation": {

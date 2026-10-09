@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "akeno/ui/AppController.hpp"
+#include "akeno/diagnostics/DiagnosticExport.hpp"
 
 #include <algorithm>
 #include <mutex>
@@ -13,6 +14,7 @@
 #include "akeno/install/OverlayManager.hpp"
 #include "akeno/mods/Catalog.hpp"
 #include "akeno/mods/ModCheck.hpp"
+#include "akeno/mods/ModPreparation.hpp"
 #include "akeno/network/CurlHttpClient.hpp"
 #include "akeno/security/ImageProbe.hpp"
 #include "akeno/security/SafeName.hpp"
@@ -143,6 +145,7 @@ AppController::AppController(app::AppContext& context, TaskRunner& tasks, MainTh
 }
 
 AppController::~AppController() {
+    diagnosticsCancel_.cancel();
     alive_->store(false);
     context_.downloads().setListener(nullptr);
     context_.downloads().stop();
@@ -262,18 +265,73 @@ Status AppController::saveSettings(const database::Settings& settings) {
     return {};
 }
 
-Result<std::string> AppController::exportDiagnostics() {
-    const app::SystemReport* report = state_.systemCheck.report ? &*state_.systemCheck.report : nullptr;
-    auto file = context_.exportDiagnostics(report);
-    if (!file) {
-        return std::move(file).error();
+void AppController::exportDiagnostics(const std::string& titleId, bool deep) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
+        addNotice("Wait for the current operation, or cancel the diagnostic export.", ToastKind::Warning);
+        return;
     }
-    return file->string();
+    if (!titleId.empty() && !games::isValidTitleId(titleId)) {
+        addNotice("The diagnostic title ID is invalid.", ToastKind::Error); return;
+    }
+    logger().flush();  // the export reads akeno.log: everything logged so far must be on disk
+    diagnostics::Request request;
+    request.paths = context_.paths();
+    request.titleId = titleId;
+    request.cachedGames = allGames_;
+    request.firmware = context_.platform().firmware();
+    request.mode = deep ? diagnostics::Mode::Deep : diagnostics::Mode::Quick;
+    request.limits = deep ? diagnostics::deepLimits() : diagnostics::quickLimits();
+    request.logFiles = {context_.paths().logs() / "akeno.log", context_.paths().logs() / "akeno.log.1"};
+    for (int i = 2; i <= 4; ++i) request.logFiles.push_back(context_.paths().logs() / ("akeno.log." + std::to_string(i)));
+    if (context_.platform().isConsole()) {
+        request.smpConfigFile = "/data/shadowmount/config.ini";
+        request.logFiles.emplace_back("/data/shadowmount/debug.log");
+        request.logFiles.emplace_back("/data/shadowmount/debug.log.1");
+    }
+    const auto port = static_cast<std::uint16_t>(state_.settings.shadowMountPort);
+    diagnosticsCancel_ = CancellationToken{};
+    const auto cancel = diagnosticsCancel_;
+    const auto alive = alive_;
+    state_.diagnostics.running = true;
+    state_.diagnostics.progress = deep ? "Starting deep read-only diagnostic export" : "Starting quick read-only diagnostic export";
+    addNotice(deep ? "Exporting deep diagnostics (this can take several minutes). No mods will be activated."
+                   : "Exporting diagnostics. No mods will be activated.",
+              ToastKind::Info);
+    tasks_.submit([this, request, port, cancel, alive] {
+        Result<std::filesystem::path> result = makeError(ErrorCode::Internal, "Diagnostic export failed");
+        try {
+            auto client = shadowmount::ShadowMountClient::create(context_.http(), {"127.0.0.1", port});
+            result = client ? diagnostics::exportReport(request, context_.fs(), *client, &cancel,
+                [this, alive](std::string progress) {
+                    mainQueue_.post([this, alive, progress = std::move(progress)] {
+                        if (alive->load()) state_.diagnostics.progress = progress;
+                    });
+                }) : Result<std::filesystem::path>(client.error());
+        } catch (const std::exception&) {
+            // A malformed input or allocation failure must not leave the UI busy forever.
+            result = makeError(ErrorCode::Internal, "Diagnostic export failed while reading or encoding evidence");
+        }
+        mainQueue_.post([this, alive, result = std::move(result), cancelled = cancel.cancelled()] {
+            if (!alive->load()) return;
+            state_.diagnostics.running = false;
+            state_.diagnostics.progress = result ? (cancelled ? "Cancelled; partial report saved" : "Report saved; check completeness fields")
+                                                 : "Export failed: " + result.error().message;
+            if (result) state_.diagnostics.lastExport = result->string();
+            addNotice(result ? "Diagnostics written to " + result->string() : state_.diagnostics.progress,
+                      result ? ToastKind::Success : ToastKind::Error);
+        });
+    });
+}
+
+void AppController::cancelDiagnostics() {
+    diagnosticsCancel_.cancel();
+    if (state_.diagnostics.running) state_.diagnostics.progress = "Cancelling; preserving partial evidence";
 }
 
 std::vector<logging::LogRecord> AppController::recentLogs() { return context_.logRing().snapshot(); }
 
 Status AppController::cleanInterruptedOperation() {
+    if (state_.diagnostics.running) return makeError(ErrorCode::Busy, "Wait for the diagnostic export before recovery cleanup.");
     if (!state_.recovery) {
         return {};
     }
@@ -703,7 +761,7 @@ Status AppController::removeDownload(const std::string& id) {
 
 void AppController::checkDownload(const std::string& id, bool again) {
     ModCheckView& view = state_.check;
-    if (installing_) {
+    if (installing_ || state_.diagnostics.running) {
         addNotice("Wait until the mod change has finished.", ToastKind::Warning);
         return;
     }
@@ -729,12 +787,24 @@ void AppController::checkDownload(const std::string& id, bool again) {
     request.modVersion = download.modVersion;
     request.titleId = download.gameTitleId;
     for (const auto& game : allGames_) {
-        if (game.titleId == download.gameTitleId) request.sourceType = game.sourceType;
+        if (game.titleId != download.gameTitleId) continue;
+        request.sourceType = game.sourceType;
+        request.gameVersion = game.version;
+        request.contentId = game.contentId;
+        request.installedPkg = game.installedPkg;
+        if (!game.installedPkg && game.sourceType == games::SourceType::Folder) request.gameFolder = game.installPath;
     }
     request.archiveRoot = download.archiveRoot;
     request.targetPrefix = download.targetPrefix;
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
+    request.pcSource = mods::isPcProvider(download.mod.providerId);
+    request.curated = mods::isCuratedProvider(download.mod.providerId) && !request.pcSource;
+    request.installedMods = installedModPaths(download.gameTitleId);
+    const auto records = testRecords(download.gameTitleId);
+    auto registry = std::make_shared<const compatibility::Registry>(install::registryWithReports(download.gameTitleId, records));
+    request.registry = registry.get();
+    request.localEvidence = install::evidenceStamp(records);
     const bool interrupted = context_.interruptedOperation().has_value();
     const std::optional<bool> hardLinks =
         state_.systemCheck.report ? state_.systemCheck.report->hardLinksSupported : std::nullopt;
@@ -751,9 +821,18 @@ void AppController::checkDownload(const std::string& id, bool again) {
         bool pending = false;
     };
     auto shared = std::make_shared<Progress>();
-    tasks_.submit([this, request, again, cancel, interrupted, hardLinks, alive, shared] {
+    tasks_.submit([this, request, registry, again, cancel, interrupted, hardLinks, alive, shared] {
         Result<mods::ModCheckReport> result = makeError(ErrorCode::NotFound, "No stored result.");
         if (!again) result = mods::loadReport(context_.paths(), request.downloadId);
+        // A stored result describes the game as it was: check again after a game update, and after
+        // the user reported a test result for the game.
+        if (result && result->game.version != request.gameVersion) {
+            logger().info("check", request.downloadId + ": the game version changed since the check; checking again");
+            result = makeError(ErrorCode::NotFound, "Stale result.");
+        } else if (result && result->localEvidence != request.localEvidence) {
+            logger().info("check", request.downloadId + ": test reports for the game changed since the check; checking again");
+            result = makeError(ErrorCode::NotFound, "Stale result.");
+        }
         if (!result) {
             mods::ModCheckEnvironment env{context_.fs(), context_.paths(), context_.journal(), interrupted,
                                           limits::kStorageSafetyReserveBytes, {}, {}};
@@ -778,7 +857,7 @@ void AppController::checkDownload(const std::string& id, bool again) {
                 if (!saved) logger().warn("check", "could not store the result: " + saved.error().describe());
             }
         }
-        if (result) mods::completeReport(result.value(), context_.paths(), hardLinks);
+        if (result) mods::completeReport(result.value(), context_.paths(), hardLinks, request.installedMods);
         mainQueue_.post([this, alive, id = request.downloadId, name = request.displayName,
                          result = std::move(result)]() mutable {
             if (!alive->load()) return;
@@ -795,6 +874,20 @@ void AppController::checkDownload(const std::string& id, bool again) {
             current.report = std::move(result).value();
         });
     });
+}
+
+std::vector<mods::InstalledModPaths> AppController::installedModPaths(const std::string& titleId) const {
+    std::vector<mods::InstalledModPaths> result;
+    if (!games::isValidTitleId(titleId)) return result;
+    auto env = installEnvironment(false);
+    auto state = install::loadTitleState(env, titleId);
+    if (!state) return result;
+    for (const auto& mod : state->mods) {
+        mods::InstalledModPaths paths{mod.downloadId, mod.name, {}};
+        for (const auto& file : mod.files) paths.installPaths.push_back(file.installPath);
+        result.push_back(std::move(paths));
+    }
+    return result;
 }
 
 void AppController::cancelCheck() {
@@ -814,8 +907,21 @@ std::string installUnavailableReason(const AppViewState& state) {
 
 }  // namespace
 
-void AppController::installChecked(const std::string& id) {
-    if (installing_ || state_.check.running) {
+void AppController::installChecked(const std::string& id) { installDownload(id, std::nullopt); }
+
+void AppController::testInstallChecked(const std::string& id, install::TestPlacement placement) {
+    installDownload(id, placement);
+}
+
+// Applied-overlay notes for the user: what Akeno turned off instead of activating.
+static std::string turnedOffText(const install::ApplyResult& applied) {
+    std::string text;
+    for (const auto& item : applied.turnedOff) text += " " + item;
+    return text;
+}
+
+void AppController::installDownload(const std::string& id, std::optional<install::TestPlacement> test) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }
@@ -852,23 +958,27 @@ void AppController::installChecked(const std::string& id) {
     request.targetPrefix = download.targetPrefix;
     request.catalogueStatus = statusFromLabel(download.compatibility);
     request.catalogueInstallable = download.catalogueInstallable;
-    request.pcSource = download.mod.providerId == providers::kNexusProviderId ||
-                       download.mod.providerId == providers::kGameBananaProviderId;
+    request.pcSource = mods::isPcProvider(download.mod.providerId);
+    request.curated = mods::isCuratedProvider(download.mod.providerId) && !request.pcSource;
+    request.gameVersion = game->version;
+    request.contentId = game->contentId;
+    request.installedPkg = game->installedPkg;
+    request.archiveSha256 = download.expectedSha256;
+    request.test = test.has_value();
+    request.placement = test.value_or(install::TestPlacement::ModsFolder);
     if (!game->installedPkg && game->sourceType == games::SourceType::Folder) request.gameFolder = game->installPath;
     const install::TitleTarget target{game->titleId, game->mounted, game->installedPkg, game->installPath};
     const bool interrupted = context_.interruptedOperation().has_value();
+    auto registry = std::make_shared<const compatibility::Registry>(
+        install::registryWithReports(request.titleId, testRecords(request.titleId)));
 
     installing_ = true;
-    addNotice("Installing " + request.name + "...", ToastKind::Info);
+    addNotice((request.test ? "Installing " + request.name + " as a test..." : "Installing " + request.name + "..."),
+              ToastKind::Info);
     auto alive = alive_;
-    tasks_.submit([this, request, target, interrupted, alive] {
-        install::InstallEnvironment env{context_.fs(),
-                                        context_.paths(),
-                                        context_.journal(),
-                                        interrupted,
-                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
-                                        limits::kStorageSafetyReserveBytes,
-                                        {}};
+    tasks_.submit([this, request, target, interrupted, registry, alive] {
+        auto env = installEnvironment(interrupted);
+        env.registry = registry.get();
         std::string message;
         ToastKind kind = ToastKind::Success;
         auto stored = install::storeMod(request, env);
@@ -878,9 +988,18 @@ void AppController::installChecked(const std::string& id) {
         } else if (auto applied = install::applyOverlay(target, env); !applied) {
             message = "The mod is kept but not active: " + applied.error().message;
             kind = ToastKind::Error;
+        } else if (stored && stored->test) {
+            const std::string folder = stored->files.empty()
+                                           ? std::string()
+                                           : std::filesystem::path(stored->files.front().installPath).parent_path().generic_string();
+            message = request.name + " is installed as a TEST in " + folder +
+                      ". Start the game and look for the mod's effect, then report the result in Installed Mods "
+                      "(OPTIONS)." + turnedOffText(applied.value());
+            kind = applied->turnedOff.empty() ? ToastKind::Success : ToastKind::Warning;
         } else {
             message = strings::concat(request.name, " is installed. ", applied->mods,
-                                      " mod(s) are active the next time the game starts.");
+                                      " mod(s) are active the next time the game starts.", turnedOffText(applied.value()));
+            kind = applied->turnedOff.empty() ? ToastKind::Success : ToastKind::Warning;
         }
         mainQueue_.post([this, alive, message, kind] {
             if (!alive->load()) return;
@@ -893,7 +1012,7 @@ void AppController::installChecked(const std::string& id) {
 }
 
 void AppController::setGameVanilla(const std::string& titleId) {
-    if (installing_ || state_.check.running) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }
@@ -907,13 +1026,7 @@ void AppController::setGameVanilla(const std::string& titleId) {
     installing_ = true;
     auto alive = alive_;
     tasks_.submit([this, target, interrupted, alive] {
-        install::InstallEnvironment env{context_.fs(),
-                                        context_.paths(),
-                                        context_.journal(),
-                                        interrupted,
-                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
-                                        limits::kStorageSafetyReserveBytes,
-                                        {}};
+        auto env = installEnvironment(interrupted);
         auto result = install::setVanilla(target, env);
         std::string message = result ? "Vanilla: all mods are off. The game starts unmodified next time."
                                      : "Could not switch to Vanilla: " + result.error().message;
@@ -931,13 +1044,7 @@ void AppController::setGameVanilla(const std::string& titleId) {
 InstalledModsSummary AppController::installedMods(const std::string& titleId) {
     if (auto cached = modSummaries_.find(titleId); cached != modSummaries_.end()) return cached->second;
     InstalledModsSummary& summary = modSummaries_[titleId];
-    install::InstallEnvironment env{context_.fs(),
-                                    context_.paths(),
-                                    context_.journal(),
-                                    false,
-                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
-                                    limits::kStorageSafetyReserveBytes,
-                                    {}};
+    auto env = installEnvironment(false);
     auto state = install::loadTitleState(env, titleId);
     if (!state) {
         summary.error = state.error();
@@ -998,8 +1105,8 @@ install::TitleTarget AppController::targetFor(const std::string& titleId) const 
     return {titleId, false, false, {}};
 }
 
-void AppController::runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work) {
-    if (installing_ || state_.check.running) {
+void AppController::runModChange(std::function<Result<ChangeMessage>(install::InstallEnvironment&)> work) {
+    if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Another mod operation is running. Wait for it to finish.", ToastKind::Warning);
         return;
     }
@@ -1007,16 +1114,10 @@ void AppController::runModChange(std::function<Result<std::string>(install::Inst
     installing_ = true;
     auto alive = alive_;
     tasks_.submit([this, work = std::move(work), interrupted, alive] {
-        install::InstallEnvironment env{context_.fs(),
-                                        context_.paths(),
-                                        context_.journal(),
-                                        interrupted,
-                                        std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
-                                        limits::kStorageSafetyReserveBytes,
-                                        {}};
+        auto env = installEnvironment(interrupted);
         auto result = work(env);
-        std::string message = result ? result.value() : result.error().message;
-        const ToastKind kind = result ? ToastKind::Success : ToastKind::Error;
+        std::string message = result ? result->text : result.error().message;
+        const ToastKind kind = result ? result->kind : ToastKind::Error;
         mainQueue_.post([this, alive, message, kind] {
             if (!alive->load()) return;
             installing_ = false;
@@ -1030,13 +1131,7 @@ void AppController::runModChange(std::function<Result<std::string>(install::Inst
 std::vector<InstalledModRow> AppController::listInstalledMods() {
     if (installedRows_) return *installedRows_;
     std::vector<InstalledModRow> rows;
-    install::InstallEnvironment env{context_.fs(),
-                                    context_.paths(),
-                                    context_.journal(),
-                                    false,
-                                    std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
-                                    limits::kStorageSafetyReserveBytes,
-                                    {}};
+    auto env = installEnvironment(false);
     std::error_code ec;
     std::vector<std::string> titles;
     for (std::filesystem::directory_iterator it(context_.paths().mods(), ec), end; !ec && it != end; it.increment(ec)) {
@@ -1055,8 +1150,21 @@ std::vector<InstalledModRow> AppController::listInstalledMods() {
             if (game.titleId == titleId) gameName = game.name;
         }
         for (const auto& mod : state->mods) {
-            rows.push_back({titleId, gameName, mod.downloadId, mod.name, mod.version, mod.mod.providerId, mod.enabled,
-                            state->overlayActive, mod.bytes});
+            InstalledModRow row{titleId, gameName, mod.downloadId, mod.name, mod.version, mod.mod.providerId, mod.enabled,
+                                state->overlayActive, mod.bytes};
+            row.test = mod.test;
+            row.testResult = mod.testResult;
+            if (mod.test && !mod.files.empty()) {
+                row.testFolder = std::filesystem::path(mod.files.front().installPath).parent_path().generic_string();
+            }
+            if (mod.pcSource && !mod.activationRecorded) {
+                row.note = "Installed by an older Akeno without a checked path: remove it and install it again.";
+            } else if (mod.activationRecorded && !mod.activationAllowed) {
+                row.note = "Its check does not allow activating it.";
+            } else if (mod.test && mod.testResult == install::TestResult::Crashed) {
+                row.note = "You reported that it crashed the game, so it stays off.";
+            }
+            rows.push_back(std::move(row));
         }
     }
     installedRows_ = rows;
@@ -1065,7 +1173,7 @@ std::vector<InstalledModRow> AppController::listInstalledMods() {
 
 void AppController::setInstalledModEnabled(const std::string& titleId, const std::string& downloadId, bool enabled) {
     const install::TitleTarget target = targetFor(titleId);
-    runModChange([target, downloadId, enabled](install::InstallEnvironment& env) -> Result<std::string> {
+    runModChange([target, downloadId, enabled](install::InstallEnvironment& env) -> Result<ChangeMessage> {
         AKENO_TRY(install::setModEnabled(env, target.titleId, downloadId, enabled));
         auto applied = install::applyOverlay(target, env);
         if (!applied) {
@@ -1073,20 +1181,70 @@ void AppController::setInstalledModEnabled(const std::string& titleId, const std
             (void)install::setModEnabled(env, target.titleId, downloadId, !enabled);
             return std::move(applied).error();
         }
-        return std::string(enabled ? "Mod turned on. Active the next time the game starts."
-                                   : "Mod turned off. The game starts without it next time.");
+        if (!applied->turnedOff.empty()) return ChangeMessage{turnedOffText(applied.value()).substr(1), ToastKind::Warning};
+        return ChangeMessage{enabled ? "Mod turned on. Active the next time the game starts."
+                                     : "Mod turned off. The game starts without it next time."};
     });
 }
 
 void AppController::removeInstalledMod(const std::string& titleId, const std::string& downloadId) {
     const install::TitleTarget target = targetFor(titleId);
-    runModChange([target, downloadId](install::InstallEnvironment& env) -> Result<std::string> {
+    runModChange([target, downloadId](install::InstallEnvironment& env) -> Result<ChangeMessage> {
         AKENO_TRY(install::setModEnabled(env, target.titleId, downloadId, false));
         auto applied = install::applyOverlay(target, env);
         if (!applied) return std::move(applied).error();
         AKENO_TRY(install::removeStoredMod(env, target.titleId, downloadId));
-        return std::string("Mod removed. Its files were deleted and the game's overlay rebuilt without it.");
+        return ChangeMessage{"Mod removed. Its files were deleted and the game's overlay rebuilt without it." +
+                                 turnedOffText(applied.value()),
+                             applied->turnedOff.empty() ? ToastKind::Success : ToastKind::Warning};
     });
+}
+
+void AppController::reportTestResult(const std::string& titleId, const std::string& downloadId, install::TestResult result) {
+    const install::TitleTarget target = targetFor(titleId);
+    runModChange([target, downloadId, result](install::InstallEnvironment& env) -> Result<ChangeMessage> {
+        auto turnedOff = install::reportTestResult(env, target.titleId, downloadId, result);
+        if (!turnedOff) return std::move(turnedOff).error();
+        if (turnedOff.value()) {
+            auto applied = install::applyOverlay(target, env);
+            if (!applied) {
+                return ChangeMessage{"The crash is recorded and the mod is turned off, but the overlay could not be rebuilt: " +
+                                         applied.error().message + " Use Vanilla on the game's page.",
+                                     ToastKind::Error};
+            }
+        }
+        switch (result) {
+            case install::TestResult::Works:
+                return ChangeMessage{"Recorded: it works. Later checks for this game version use your report."};
+            case install::TestResult::NoEffect:
+                return ChangeMessage{"Recorded: no effect. If its files are in ~mods, open its check in Downloads and press "
+                                     "SQUARE to test it directly in the package folder instead.",
+                                     ToastKind::Info};
+            case install::TestResult::Crashed:
+                return ChangeMessage{"Recorded: crash. The mod is off, and the game starts without it next time.",
+                                     ToastKind::Warning};
+            case install::TestResult::Untested:
+                break;
+        }
+        return ChangeMessage{"The result was reset.", ToastKind::Info};
+    });
+}
+
+install::InstallEnvironment AppController::installEnvironment(bool interrupted) const {
+    return install::InstallEnvironment{context_.fs(),
+                                       context_.paths(),
+                                       context_.journal(),
+                                       interrupted,
+                                       std::filesystem::path(std::string(install::kDefaultBackportsRoot)),
+                                       limits::kStorageSafetyReserveBytes,
+                                       {}};
+}
+
+std::vector<install::TestRecord> AppController::testRecords(const std::string& titleId) const {
+    if (!games::isValidTitleId(titleId)) return {};
+    auto env = installEnvironment(false);
+    auto state = install::loadTitleState(env, titleId);
+    return state ? state->testRecords() : std::vector<install::TestRecord>{};
 }
 
 }  // namespace akeno::ui

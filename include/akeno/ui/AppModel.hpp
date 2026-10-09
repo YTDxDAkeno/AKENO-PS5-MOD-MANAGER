@@ -16,6 +16,7 @@
 #include "akeno/database/SettingsStore.hpp"
 #include "akeno/downloads/DownloadTypes.hpp"
 #include "akeno/games/GameInfo.hpp"
+#include "akeno/install/TestReports.hpp"
 #include "akeno/logging/Logger.hpp"
 #include "akeno/mods/ModCheck.hpp"
 #include "akeno/providers/IModProvider.hpp"
@@ -152,6 +153,10 @@ struct InstalledModRow {
     bool enabled = false;
     bool overlayActive = false;  // of the game
     std::uint64_t bytes = 0;
+    bool test = false;           // a test install of a PC mod (see install/TestReports.hpp)
+    install::TestResult testResult = install::TestResult::Untested;
+    std::string testFolder = {};  // game-relative folder its package files are in
+    std::string note = {};        // why it cannot be turned on, when it cannot
 };
 
 enum class ToastKind { Info, Success, Warning, Error };
@@ -163,7 +168,14 @@ struct Notice {
     ToastKind kind = ToastKind::Info;
 };
 
+struct DiagnosticView {
+    bool running = false;
+    std::string progress;
+    std::string lastExport;
+};
+
 struct AppViewState {
+    DiagnosticView diagnostics;
     SystemCheckView systemCheck;
     LibraryView library;
     CatalogView catalog;
@@ -186,7 +198,9 @@ public:
     virtual void runSystemCheck() = 0;
     virtual void refreshLibrary() = 0;
     virtual Status saveSettings(const database::Settings& settings) = 0;
-    virtual Result<std::string> exportDiagnostics() = 0;
+    // Quick by default; `deep` also hashes large game files (much slower).
+    virtual void exportDiagnostics(const std::string& titleId = {}, bool deep = false) = 0;
+    virtual void cancelDiagnostics() = 0;
     virtual std::vector<logging::LogRecord> recentLogs() = 0;
     // Deletes the staging data of an interrupted operation and clears the journal.
     virtual Status cleanInterruptedOperation() = 0;
@@ -220,6 +234,12 @@ public:
     // Installing (Phase 5). installChecked keeps a checked download for its game and applies the
     // game's overlay; setGameVanilla turns every mod of a game off. Results arrive as notices.
     virtual void installChecked(const std::string& downloadId) = 0;
+    // A test install of a PC mod the check offers one for (Assessment::testInstallAvailable),
+    // after the user confirmed its risks. Refused otherwise.
+    virtual void testInstallChecked(const std::string& downloadId, install::TestPlacement placement) = 0;
+    // What happened in the game after a test install. A crash also turns the mod off.
+    virtual void reportTestResult(const std::string& titleId, const std::string& downloadId,
+                                  install::TestResult result) = 0;
     virtual void setGameVanilla(const std::string& titleId) = 0;
     virtual InstalledModsSummary installedMods(const std::string& titleId) = 0;
     virtual bool installBusy() const = 0;

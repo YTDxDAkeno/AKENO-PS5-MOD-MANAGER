@@ -29,8 +29,8 @@
   },
   "download": {
     "url": "http://127.0.0.1:10101/files/example-blade-sharper-foliage-0.9.1.zip",
-    "size": 250,
-    "sha256": "699997cc40eccb20937bbdd73aa23ac097f886a9a61298278a394ea68a05414f",
+    "size": 376,
+    "sha256": "69fbe79f58c01d6faaba00525f282a0aafe876d5ba3375cfe3b2b04ff7ddeccf",
     "format": "zip"
   },
   "installation": {

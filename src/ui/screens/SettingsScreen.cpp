@@ -32,7 +32,7 @@ std::string itemLabel(SettingsScreen::Item item) {
         case SettingsScreen::Item::GameBanana: return "GameBanana mods (free)";
         case SettingsScreen::Item::RunSystemCheck: return "Run the system check";
         case SettingsScreen::Item::ViewLog: return "View the log";
-        case SettingsScreen::Item::ExportDiagnostics: return "Export diagnostic log";
+        case SettingsScreen::Item::ExportDiagnostics: return "Export Diagnostics";
         case SettingsScreen::Item::FirstRunGuide: return "Show the first-run guide again";
         case SettingsScreen::Item::Exit: return "Exit Akeno Mod Manager";
     }
@@ -148,12 +148,8 @@ NavRequest SettingsScreen::handle(Action action, UiEnv& env) {
         case Item::ViewLog:
             return NavRequest::push(std::make_unique<LogViewerScreen>());
         case Item::ExportDiagnostics: {
-            auto exported = env.commands.exportDiagnostics();
-            if (exported) {
-                env.showToast("Written to " + exported.value(), ToastKind::Success);
-            } else {
-                env.showToast("Export failed: " + exported.error().message, ToastKind::Error);
-            }
+            if (env.state.diagnostics.running) env.commands.cancelDiagnostics();
+            else env.commands.exportDiagnostics();
             break;
         }
         case Item::FirstRunGuide:
@@ -203,7 +199,11 @@ void SettingsScreen::render(ICanvas& canvas, UiEnv& env) {
         case Item::RunSystemCheck: explanation = "Checks ShadowMountPlus, storage, network and the database again."; break;
         case Item::ViewLog: explanation = "Recent messages, newest at the bottom."; break;
         case Item::ExportDiagnostics:
-            explanation = "Writes a report to the logs folder of the data directory for bug reports.";
+            explanation = env.state.diagnostics.running
+                ? env.state.diagnostics.progress + ". Select again to cancel and save partial results."
+                : "Exports installed mod manifests, available source inventories and logs as JSON on this console. "
+                  "For one game, use Games > Details > Export Diagnostics. " + env.state.diagnostics.progress;
+            if (!env.state.diagnostics.lastExport.empty()) explanation += " Saved: " + env.state.diagnostics.lastExport;
             break;
         case Item::FirstRunGuide: explanation = "Walks through the environment check again."; break;
         case Item::Exit: explanation = "Closes Akeno and returns to the console."; break;

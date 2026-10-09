@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "akeno/core/Result.hpp"
+#include "akeno/core/Json.hpp"
 #include "akeno/network/Http.hpp"
 
 namespace akeno::shadowmount {
@@ -87,6 +88,7 @@ public:
     Result<GameList> games();
     Result<std::vector<StorageMount>> storage();
     Result<std::vector<std::string>> customScanPaths();
+    Result<json::Json> diagnosticSettings(); // strict, allowlisted read-only settings snapshot
     // PNG bytes of a game's icon. `titleId` must be valid.
     Result<std::string> icon(std::string_view titleId, bool thumbnail);
 

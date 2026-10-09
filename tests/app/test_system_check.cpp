@@ -100,6 +100,8 @@ TEST_CASE("full system check with a healthy (mocked) environment") {
     CHECK(progress.size() == 8);
     CHECK(report.find(CheckId::ShadowMountApi)->status == CheckStatus::Ok);
     CHECK(report.find(CheckId::WritableStorage)->status != CheckStatus::Failed);
+    // Every report says whether files below an opened folder can be read (mod checks need it).
+    CHECK(report.find(CheckId::WritableStorage)->detail.find("folder-relative file access: OK") != std::string::npos);
     CHECK(report.find(CheckId::Networking)->status == CheckStatus::Ok);
     CHECK(report.find(CheckId::Database)->status == CheckStatus::Ok);
     CHECK(report.find(CheckId::Database)->summary ==

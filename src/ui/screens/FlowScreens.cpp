@@ -116,9 +116,8 @@ NavRequest SystemCheckScreen::handle(Action action, UiEnv& env) {
         env.commands.runSystemCheck();
     }
     if (action == Action::Tertiary && !running) {
-        auto exported = env.commands.exportDiagnostics();
-        env.showToast(exported ? "Report written to " + exported.value() : "Export failed: " + exported.error().message,
-                      exported ? ToastKind::Success : ToastKind::Error);
+        if (env.state.diagnostics.running) env.commands.cancelDiagnostics();
+        else env.commands.exportDiagnostics();
     }
     return NavRequest::none();
 }

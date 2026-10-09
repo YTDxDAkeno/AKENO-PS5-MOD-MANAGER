@@ -239,46 +239,5 @@ Result<fs::path> AppContext::writeReport(std::string_view prefix, std::string_vi
     return file;
 }
 
-Result<fs::path> AppContext::exportDiagnostics(const SystemReport* lastReport) {
-    std::string text;
-    text += strings::concat("Akeno PS5 Mod Manager diagnostic report\n", "Generated: ", strings::utcTimestamp(), "\n");
-    text += strings::concat("Version: ", build::version(), " (", build::target(), ", ", build::gitRevision(), ")\n");
-    text += strings::concat("Compiler: ", build::compiler(), "\n");
-    text += strings::concat("Platform: ", platform_->name(), "\n");
-    text += strings::concat("Firmware: ", platform_->firmware().display, "\n");
-    text += strings::concat("Network: ", network::curlVersionDescription(), "\n");
-    text += strings::concat("Database: ", database::sqliteVersion(),
-                            dbError_ ? " - ERROR: " + dbError_->describe() : std::string(), "\n");
-    text += strings::concat("Data directory: ", paths_.root.string(), "\n");
-    text += strings::concat("Testing status: ", build::testingStatus(), "\n\n");
-
-    text += "Settings:\n";
-    text += strings::concat("  shadowmount.port = ", settings_.shadowMountPort, "\n");
-    text += strings::concat("  library.show_ps4 = ", settings_.showPs4Games, "\n");
-    text += strings::concat("  library.show_homebrew = ", settings_.showHomebrew, "\n");
-    text += strings::concat("  library.sort = ", database::toString(settings_.librarySort), "\n");
-    text += strings::concat("  network.probe_url = ", settings_.networkProbeUrl, "\n");
-    text += strings::concat("  catalogue.url = ", catalogue_ ? catalogue_->baseUrl() : settings_.catalogueUrl,
-                            catalogueOverride_ ? " (command line)" : "", "\n\n");
-
-    if (interrupted_) {
-        text += strings::concat("Interrupted operation: ", interrupted_->operationId, " kind=", interrupted_->kind,
-                                " step=", interrupted_->step, "\n\n");
-    }
-    if (lastReport != nullptr) {
-        text += lastReport->toText();
-        text += "\n";
-    }
-    text += "Recent log:\n";
-    for (const auto& record : logRing_->snapshot()) {
-        text += record.format();
-        text += "\n";
-    }
-    auto file = writeReport("diagnostic", logging::redactSecrets(text));
-    if (file) {
-        logger().info("diagnostics", "diagnostic report written: " + file->string());
-    }
-    return file;
-}
 
 }  // namespace akeno::app

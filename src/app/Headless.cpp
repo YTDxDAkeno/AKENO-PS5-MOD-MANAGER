@@ -90,6 +90,9 @@ std::string checkTestArchive(AppContext& context, const std::string& downloadId,
     request.displayName = "Akeno download test";
     request.modVersion = "1";
     request.titleId = "TEST00000";
+    // Akeno's own harmless test archive: its layout is defined like a curated manifest (archive
+    // root to game root), so the plan can be described without a game.
+    request.curated = true;
     mods::ModCheckEnvironment env{context.fs(), context.paths(), context.journal(),
                                   context.interruptedOperation().has_value(), limits::kStorageSafetyReserveBytes, {}, {}};
     auto report = mods::runModCheck(request, env);

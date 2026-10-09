@@ -106,12 +106,8 @@ NavRequest LogViewerScreen::handle(Action action, UiEnv& env) {
         case Action::PageUp: offsetFromEnd_ += kLogVisibleLines; break;
         case Action::PageDown: offsetFromEnd_ = std::max(0, offsetFromEnd_ - kLogVisibleLines); break;
         case Action::Options: {
-            auto exported = env.commands.exportDiagnostics();
-            if (exported) {
-                env.showToast("Diagnostic log written to " + exported.value(), ToastKind::Success);
-            } else {
-                env.showToast("Export failed: " + exported.error().message, ToastKind::Error);
-            }
+            if (env.state.diagnostics.running) env.commands.cancelDiagnostics();
+            else env.commands.exportDiagnostics();
             break;
         }
         default: break;

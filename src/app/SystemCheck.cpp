@@ -11,6 +11,7 @@
 #include "akeno/core/Limits.hpp"
 #include "akeno/core/Strings.hpp"
 #include "akeno/logging/Logger.hpp"
+#include "akeno/security/SafeOpen.hpp"
 
 namespace akeno::app {
 
@@ -213,24 +214,32 @@ CheckResult SystemChecker::checkWritableStorage() {
                     written.error().detail);
     }
     auto readBack = security::readFileBounded(probe, 4096);
+    // Mod checks, game listings and diagnostics open files below an opened folder; whether that
+    // works on this console is part of every report (it failed on firmware 12.20 before 0.3).
+    const std::string access = security::probeFolderAccess(deps_.paths.cache(), "write-probe.txt");
     (void)deps_.fs->removeFile(probe);
     if (!readBack || readBack.value() != payload) {
         return make(CheckId::WritableStorage, label, CheckStatus::Failed,
                     "the test file could not be read back correctly");
     }
+    const std::string accessFact = "; folder-relative file access: " + (access.empty() ? std::string("OK") : "FAILED (" + access + ")");
+    if (!access.empty()) logging::logger().warn("syscheck", "folder-relative file access failed: " + access);
     auto space = security::queryStorageSpace(deps_.paths.root);
     if (!space) {
         return make(CheckId::WritableStorage, label, CheckStatus::Warning, "writable; free space unknown",
-                    space.error().detail);
+                    space.error().detail + accessFact);
     }
     std::string summary = "OK - " + strings::formatBytes(space->availableBytes) + " free";
     if (space->availableBytes < limits::kStorageSafetyReserveBytes) {
         return make(CheckId::WritableStorage, label, CheckStatus::Warning,
                     summary + " (below the " + strings::formatBytes(limits::kStorageSafetyReserveBytes) +
                         " safety reserve)",
-                    deps_.paths.root.string());
+                    deps_.paths.root.string() + accessFact);
     }
-    return make(CheckId::WritableStorage, label, CheckStatus::Ok, summary, deps_.paths.root.string());
+    // Shown, but not used to switch features off: storage itself works, and the checks that need
+    // this access name it as the reason when they cannot inspect a file.
+    if (!access.empty()) summary += "; mod files cannot be inspected (" + access + ")";
+    return make(CheckId::WritableStorage, label, CheckStatus::Ok, summary, deps_.paths.root.string() + accessFact);
 }
 
 CheckResult SystemChecker::checkNetworking() {

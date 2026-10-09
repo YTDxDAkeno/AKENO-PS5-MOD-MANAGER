@@ -18,7 +18,9 @@ own site and PC mod managers use it, tested with recorded answers.
   `https://gamebanana.com/dl/<file>` over HTTPS.
 * GameBanana publishes no SHA-256: Akeno checks the exact size, records the
   SHA-256, then unpacks and analyses as for every mod.
-* Like Nexus, GameBanana mods are made for PC: always **EXPERIMENTAL**, with a
-  confirmation for downloading and for installing; Windows programs, script
-  loaders and console code are still refused. Archives are installed as they are
-  laid out; the check screen shows where every file goes.
+* Like Nexus, GameBanana mods are made for PC: **EXPERIMENTAL**, with a
+  confirmation for downloading; Windows programs, script loaders and console code
+  are refused. The check maps the archive onto the installed game and explains
+  the result; PC files are activated only with recorded evidence for the game
+  version (see [compatibility-engine.md](compatibility-engine.md)), or installed
+  as a user-confirmed test install when they qualify for one.

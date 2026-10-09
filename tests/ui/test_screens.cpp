@@ -347,7 +347,8 @@ TEST_CASE("log viewer shows records and exports diagnostics") {
     screen.render(canvas, h.env);
     CHECK(canvas.hasText("11:22:33  [startup] hello"));
     screen.handle(Action::Options, h.env);
-    CHECK(h.toasted("Diagnostic log written"));
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles.front().empty());
     CHECK(screen.handle(Action::Back, h.env).kind == NavRequest::Kind::Pop);
 }
 
@@ -413,4 +414,90 @@ TEST_CASE("installed mods can be turned off, removed, and a game switched to Van
     screen.update(h.env);
     REQUIRE(h.commands.vanillas.size() == 1);
     CHECK(h.commands.vanillas[0] == "PPSA24701");
+}
+
+TEST_CASE("test installs show their state and take a result; old PC installs explain why they stay off") {
+    test::UiHarness h;
+    InstalledModsScreen screen;
+    InstalledModRow testRow{"PPSA28000", "Dawnwalker", "dac30f1aa5840955", "Better Carry Weight x10", "1.0", "nexus",
+                            true, true, 171827};
+    testRow.test = true;
+    testRow.testFolder = "dawnwalker/content/paks/~mods";
+    InstalledModRow legacy{"PPSA28000", "Dawnwalker", "cccc3333", "Old PC mod", "1.0", "nexus", false, true, 10};
+    legacy.note = "Installed by an older Akeno without a checked path.";
+    h.commands.installedRows = {testRow, legacy};
+    test::RecordingCanvas canvas;
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("TEST"));
+    CHECK(canvas.hasText("Test in dawnwalker/content/paks/~mods: not reported yet"));
+    CHECK(canvas.hasText("Installed by an older Akeno"));
+    const auto hints = screen.hints(h.env);
+    CHECK(std::any_of(hints.begin(), hints.end(), [](const ButtonHint& hint) { return hint.label == "Test result"; }));
+
+    auto nav = screen.handle(Action::Options, h.env);
+    auto* result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    test::RecordingCanvas dialog;
+    result->render(dialog, h.env);
+    CHECK(dialog.hasText("How did the test go?"));
+    CHECK(dialog.hasText("The game crashed or did not start"));
+    CHECK(result->handle(Action::Confirm, h.env).kind == NavRequest::Kind::Pop);  // Cancel is focused first
+    CHECK(h.commands.testReports.empty());
+    nav = screen.handle(Action::Options, h.env);
+    result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    for (int i = 0; i < 3; ++i) result->handle(Action::Up, h.env);
+    result->handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.testReports.size() == 1);
+    CHECK(h.commands.testReports[0].downloadId == "dac30f1aa5840955");
+    CHECK(h.commands.testReports[0].result == install::TestResult::Works);
+    nav = screen.handle(Action::Options, h.env);
+    result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    result->handle(Action::Up, h.env);  // "The game crashed or did not start"
+    result->handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.testReports.size() == 2);
+    CHECK(h.commands.testReports[1].result == install::TestResult::Crashed);
+
+    // The old install: CROSS explains instead of turning it on, OPTIONS has nothing to report.
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.toggles.empty());
+    REQUIRE_FALSE(h.toasts.empty());
+    CHECK(h.toasts.back().find("older Akeno") != std::string::npos);
+    CHECK(screen.handle(Action::Options, h.env).screen == nullptr);
+}
+
+TEST_CASE("diagnostic export is available per game without enabling mods") {
+    test::UiHarness h;
+    games::GameInfo game;
+    game.titleId = "PPSA24701";
+    game.name = "Diagnostic game";
+    h.state.library.games.push_back(game);
+    GameDetailScreen screen(game.titleId);
+    test::RecordingCanvas canvas;
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("Export Diagnostics"));
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles[0] == game.titleId);
+    CHECK(h.commands.vanillas.empty());
+    h.state.diagnostics.running = true;
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.diagnosticCancels == 1);
+}
+
+TEST_CASE("settings diagnostic export starts asynchronously and can be cancelled") {
+    test::UiHarness h;
+    SettingsScreen screen;
+    for (int i = 0; i < static_cast<int>(SettingsScreen::Item::ExportDiagnostics); ++i)
+        screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.diagnosticTitles.size() == 1);
+    CHECK(h.commands.diagnosticTitles[0].empty());
+    h.state.diagnostics.running = true;
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.diagnosticCancels == 1);
 }
