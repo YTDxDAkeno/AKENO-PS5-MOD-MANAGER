@@ -265,7 +265,7 @@ Status AppController::saveSettings(const database::Settings& settings) {
     return {};
 }
 
-void AppController::exportDiagnostics(const std::string& titleId) {
+void AppController::exportDiagnostics(const std::string& titleId, bool deep) {
     if (installing_ || state_.check.running || state_.diagnostics.running) {
         addNotice("Wait for the current operation, or cancel the diagnostic export.", ToastKind::Warning);
         return;
@@ -279,6 +279,8 @@ void AppController::exportDiagnostics(const std::string& titleId) {
     request.titleId = titleId;
     request.cachedGames = allGames_;
     request.firmware = context_.platform().firmware();
+    request.mode = deep ? diagnostics::Mode::Deep : diagnostics::Mode::Quick;
+    request.limits = deep ? diagnostics::deepLimits() : diagnostics::quickLimits();
     request.logFiles = {context_.paths().logs() / "akeno.log", context_.paths().logs() / "akeno.log.1"};
     for (int i = 2; i <= 4; ++i) request.logFiles.push_back(context_.paths().logs() / ("akeno.log." + std::to_string(i)));
     if (context_.platform().isConsole()) {
@@ -291,8 +293,10 @@ void AppController::exportDiagnostics(const std::string& titleId) {
     const auto cancel = diagnosticsCancel_;
     const auto alive = alive_;
     state_.diagnostics.running = true;
-    state_.diagnostics.progress = "Starting read-only diagnostic export";
-    addNotice("Exporting diagnostics. No mods will be activated.", ToastKind::Info);
+    state_.diagnostics.progress = deep ? "Starting deep read-only diagnostic export" : "Starting quick read-only diagnostic export";
+    addNotice(deep ? "Exporting deep diagnostics (this can take several minutes). No mods will be activated."
+                   : "Exporting diagnostics. No mods will be activated.",
+              ToastKind::Info);
     tasks_.submit([this, request, port, cancel, alive] {
         Result<std::filesystem::path> result = makeError(ErrorCode::Internal, "Diagnostic export failed");
         try {

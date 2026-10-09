@@ -90,8 +90,12 @@ public:
         return {};
     }
     std::vector<std::string> diagnosticTitles;
+    std::vector<bool> diagnosticDeep;
     int diagnosticCancels = 0;
-    void exportDiagnostics(const std::string& titleId = {}) override { diagnosticTitles.push_back(titleId); }
+    void exportDiagnostics(const std::string& titleId = {}, bool deep = false) override {
+        diagnosticTitles.push_back(titleId);
+        diagnosticDeep.push_back(deep);
+    }
     void cancelDiagnostics() override { ++diagnosticCancels; }
     std::vector<logging::LogRecord> recentLogs() override { return logs; }
     Status cleanInterruptedOperation() override {

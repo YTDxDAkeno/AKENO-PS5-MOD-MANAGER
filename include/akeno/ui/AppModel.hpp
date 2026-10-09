@@ -193,7 +193,8 @@ public:
     virtual void runSystemCheck() = 0;
     virtual void refreshLibrary() = 0;
     virtual Status saveSettings(const database::Settings& settings) = 0;
-    virtual void exportDiagnostics(const std::string& titleId = {}) = 0;
+    // Quick by default; `deep` also hashes large game files (much slower).
+    virtual void exportDiagnostics(const std::string& titleId = {}, bool deep = false) = 0;
     virtual void cancelDiagnostics() = 0;
     virtual std::vector<logging::LogRecord> recentLogs() = 0;
     // Deletes the staging data of an interrupted operation and clears the journal.

@@ -504,6 +504,11 @@ IoStoreToc parseIoStoreToc(const ByteSource& source, const TocParseOptions& opti
         toc.partitionCount = partitionCount == 0 ? 1 : partitionCount;
         toc.partitionSize = partitionSize;
     }
+    if (options.headerOnly) {
+        toc.status = ParseStatus::Parsed;
+        toc.detail = "Header only.";
+        return toc;
+    }
     if (source.size() > options.maxTocBytes && !options.chunkIdsOnly) {
         toc.status = ParseStatus::Unsupported;
         toc.detail = "The table of contents is too large to inspect completely.";

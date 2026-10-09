@@ -158,6 +158,7 @@ struct IoStoreToc {
 };
 
 struct TocParseOptions {
+    bool headerOnly = false;                 // the 144-byte header (version, flags, counts)
     bool chunkIdsOnly = false;               // header and chunk ids (for a game's large containers)
     std::uint64_t maxTocBytes = 64ull * 1024 * 1024;   // whole-table parse (mods)
     std::uint64_t maxEntries = 4u * 1024 * 1024;

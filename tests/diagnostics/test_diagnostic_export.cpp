@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Doctest.hpp"
 #include "TestSupport.hpp"
+#include "UnrealTestSupport.hpp"
 #include "akeno/diagnostics/DiagnosticExport.hpp"
 #include "akeno/security/Sha256.hpp"
+#include <map>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -294,4 +296,112 @@ TEST_CASE("native inventory flags case ambiguity and unsafe path names") {
     diagnostics::Limits limits;
     limits.duration = std::chrono::seconds{0};
     CHECK(diagnostics::inventory(dir.path(), limits)["complete"] == false);
+}
+
+TEST_CASE("quick diagnostics list large game files without hashing them and still complete every check") {
+    Fixture f;
+    f.request.mode = diagnostics::Mode::Quick;
+    f.request.limits = diagnostics::quickLimits();
+    const std::string large(3 * 1024 * 1024, 'g');  // stands in for a multi-gigabyte .ucas
+    fs::create_directories(f.game / "dawnwalker/content/paks");
+    test::writeText(f.game / "dawnwalker/content/paks/dawnwalker-ps5.ucas", large);
+    const auto container = test::packageSet("/Game/Test/BP_Thing", {});
+    test::writeText(f.game / "dawnwalker/content/paks/dawnwalker-ps5.utoc", container.utoc);
+    test::writeText(f.game / "dawnwalker/content/paks/dawnwalker-ps5.pak", container.pak);
+    auto report = f.run();
+    CHECK(report["diagnosticsMode"] == "quick");
+    const auto& title = report["titles"][0];
+    CHECK(title["selection"]["status"] == "predicted-akeno");
+    CHECK(title["selection"]["apiEvidenceRechecked"] == true);
+    CHECK(title["vanilla"]["complete"] == true);  // the listing is complete; hashes are not
+    CHECK(title["vanilla"]["hashesComplete"] == false);
+    CHECK(title["vanilla"]["hashesSkipped"] == 1);
+    std::map<std::string, Json> entries;
+    for (const auto& entry : title["vanilla"]["entries"]) entries[entry["path"].get<std::string>()] = entry;
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.ucas"]["hashStatus"] == "skipped-quick-mode");
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.ucas"]["size"] == large.size());
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.utoc"]["hashStatus"] == "complete");
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.utoc"]["container"]["version"] == 8);
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.utoc"]["container"]["signed"] == false);
+    CHECK(entries["dawnwalker/content/paks/dawnwalker-ps5.pak"]["container"]["version"] == 11);
+    CHECK(report["bytesHashed"].get<std::uint64_t>() < large.size());
+    CHECK(report["timeLimitReached"] == false);
+    // Deep mode hashes it.
+    f.request.mode = diagnostics::Mode::Deep;
+    f.request.limits = diagnostics::deepLimits();
+    report = f.run();
+    CHECK(report["diagnosticsMode"] == "deep");
+    for (const auto& entry : report["titles"][0]["vanilla"]["entries"]) {
+        if (entry["path"] == "dawnwalker/content/paks/dawnwalker-ps5.ucas") CHECK(entry["hashStatus"] == "complete");
+    }
+}
+
+TEST_CASE("overlay selection is evaluated and rechecked even when the inventory runs out of time") {
+    Fixture f;
+    f.request.limits.gameDuration = std::chrono::seconds{0};
+    auto report = f.run();
+    auto& title = report["titles"][0];
+    CHECK(title["vanilla"]["complete"] == false);
+    CHECK(title["vanilla"]["status"] == "partial");
+    CHECK(title["vanilla"]["incompleteReasons"][0] == "time limit");
+    CHECK(report["gameInventoryTimeLimitReached"] == true);
+    CHECK(title["overlay"]["complete"] == true);  // Akeno's own trees are not starved by the game folder
+    CHECK(title["selection"]["status"] == "predicted-akeno");
+    CHECK(title["selection"]["evaluatedBeforeInventory"] == true);
+    CHECK(title["selection"]["apiEvidenceRechecked"] == true);
+    // Even with the whole export out of time, the cheap checks still run and say what they saw.
+    f.request.limits.duration = std::chrono::seconds{0};
+    report = f.run();
+    CHECK(report["timeLimitReached"] == true);
+    CHECK(report["titles"][0]["selection"]["status"] == "predicted-akeno");
+    CHECK(report["titles"][0]["overlay"]["status"] == "partial");
+}
+
+TEST_CASE("budget stops are reported as budget stops, never as filesystem errors") {
+    test::TempDir dir;
+    for (int i = 0; i < 5; ++i) test::writeText(dir.path() / ("f" + std::to_string(i)), "x");
+    diagnostics::Limits limits;
+    limits.entries = 2;
+    auto report = diagnostics::inventory(dir.path(), limits);
+    CHECK(report["status"] == "partial");
+    CHECK(report["incompleteReasons"] == Json::array({"entry limit"}));
+    for (const auto& finding : report["findings"]) {
+        CHECK(finding["message"].get<std::string>().find("entry limit") != std::string::npos);
+        CHECK(finding["message"].get<std::string>().find("enumeration") == std::string::npos);
+    }
+}
+
+TEST_CASE("filesystem errors keep their errno") {
+    if (::geteuid() == 0) { MESSAGE("permission test requires an unprivileged runner"); return; }
+    test::TempDir dir;
+    test::writeText(dir.path() / "locked", "x");
+    fs::permissions(dir.path() / "locked", fs::perms::none);
+    auto report = diagnostics::inventory(dir.path());
+    fs::permissions(dir.path() / "locked", fs::perms::owner_all);
+    REQUIRE(report["findings"].size() == 1);
+    CHECK(report["findings"][0]["message"].get<std::string>().find("EACCES") != std::string::npos);
+}
+
+TEST_CASE("overlay entries Akeno did not record are marked, empty ones as possible unionfs shadow folders") {
+    Fixture f;
+    const auto store = f.paths.mods() / "PPSA24701/mod1/files";
+    fs::create_directories(store);
+    test::writeText(store / "asset.bin", "PC replacement");
+    const auto hash = security::sha256File(store / "asset.bin").value();
+    Json file{{"installPath", "asset.bin"}, {"storePath", "asset.bin"}, {"size", 14}, {"sha256", hash}};
+    Json mod{{"downloadId", "mod1"}, {"provider", "akeno-catalogue"}, {"files", Json::array({file})}};
+    test::writeText(store.parent_path().parent_path() / "state.json",
+        Json{{"schemaVersion", 1}, {"titleId", "PPSA24701"}, {"mods", Json::array({mod})}}.dump());
+    fs::create_directories(f.overlay / "sce_sys");  // as if a mounted run looked the folder up
+    auto report = f.run();
+    const auto& title = report["titles"][0];
+    CHECK(title["overlayUnrecordedEntries"] == 1);
+    for (const auto& entry : title["overlay"]["entries"]) {
+        if (entry["path"] == "asset.bin") CHECK(entry["recordedByAkeno"] == true);
+        if (entry["path"] == "sce_sys") {
+            CHECK(entry["recordedByAkeno"] == false);
+            CHECK(entry["note"].get<std::string>().find("shadow folder") != std::string::npos);
+        }
+    }
+    CHECK(title["installedMods"][0]["recordedActivation"].is_null());
 }

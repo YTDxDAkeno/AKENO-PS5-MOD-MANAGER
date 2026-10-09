@@ -210,9 +210,10 @@ void GameLibraryScreen::render(ICanvas& canvas, UiEnv& env) {
 
 namespace {
 
-enum class DetailAction { BrowseMods, Vanilla, ExportDiagnostics, Back };
-constexpr std::array<DetailAction, 4> kDetailActions{DetailAction::BrowseMods, DetailAction::Vanilla,
-                                                      DetailAction::ExportDiagnostics, DetailAction::Back};
+enum class DetailAction { BrowseMods, Vanilla, ExportDiagnostics, DeepDiagnostics, Back };
+constexpr std::array<DetailAction, 5> kDetailActions{DetailAction::BrowseMods, DetailAction::Vanilla,
+                                                      DetailAction::ExportDiagnostics, DetailAction::DeepDiagnostics,
+                                                      DetailAction::Back};
 
 }  // namespace
 
@@ -275,9 +276,12 @@ NavRequest GameDetailScreen::handle(Action action, UiEnv& env) {
                                                                         "Vanilla", confirmVanilla_.callback(), false));
             }
             case DetailAction::ExportDiagnostics:
+            case DetailAction::DeepDiagnostics: {
+                const bool deep = kDetailActions[static_cast<std::size_t>(actions_.focus())] == DetailAction::DeepDiagnostics;
                 if (env.state.diagnostics.running) env.commands.cancelDiagnostics();
-                else env.commands.exportDiagnostics(titleId_);
+                else env.commands.exportDiagnostics(titleId_, deep);
                 break;
+            }
             case DetailAction::Back:
                 return NavRequest::pop();
         }
@@ -309,13 +313,15 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     if (entry != nullptr) browseLabel = strings::concat("Browse mods (", entry->modCount, ")");
     const InstalledModsSummary mods = env.commands.installedMods(titleId_);
     const bool modsActive = mods.overlayActive || mods.enabled > 0;
-    const std::array<std::string, 4> labels{browseLabel, modsActive ? "Vanilla (mods off)" : "Vanilla",
-        env.state.diagnostics.running ? "Cancel export" : "Export Diagnostics", "Back"};
+    const std::array<std::string, 5> labels{browseLabel, modsActive ? "Vanilla (mods off)" : "Vanilla",
+        env.state.diagnostics.running ? "Cancel export" : "Export Diagnostics",
+        env.state.diagnostics.running ? "Cancel export" : "Deep Diagnostics", "Back"};
     int buttonY = art.bottom() + 30;
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
-        const Rect row{content.x, buttonY + i * 80, kIconSize, 70};
+        const Rect row{content.x, buttonY + i * 62, kIconSize, 54};
         const DetailAction kind = kDetailActions[static_cast<std::size_t>(i)];
-        const bool enabled = kind == DetailAction::Back || kind == DetailAction::ExportDiagnostics || (kind == DetailAction::BrowseMods && entry != nullptr) ||
+        const bool enabled = kind == DetailAction::Back || kind == DetailAction::ExportDiagnostics ||
+                             kind == DetailAction::DeepDiagnostics || (kind == DetailAction::BrowseMods && entry != nullptr) ||
                              (kind == DetailAction::Vanilla && modsActive);
         draw::button(canvas, row, labels[static_cast<std::size_t>(i)], actions_.focus() == i, enabled);
     }
@@ -335,7 +341,7 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
             note = "Checking the Akeno Catalogue...";
         }
     }
-    canvas.drawText(note, {content.x, buttonY + 4 * 80, kIconSize, 36},
+    canvas.drawText(note, {content.x, buttonY + 5 * 62, kIconSize, 36},
                     TextStyle{FontRole::Small, theme::kTextDisabled, TextAlign::Left, false});
 
     const int infoX = content.x + kIconSize + 60;
@@ -368,8 +374,10 @@ void GameDetailScreen::render(ICanvas& canvas, UiEnv& env) {
     }
     drawWrappedText(canvas,
                     env.state.diagnostics.progress.empty()
-                        ? "Export Diagnostics reads stored mods, the overlay and accessible original folder files. "
-                          "It does not activate mods or launch the game. No game assets are exported."
+                        ? "Export Diagnostics (quick) lists stored mods, the overlay and the original folder with sizes and "
+                          "container headers, and hashes only small game files. Deep Diagnostics also hashes large game "
+                          "files and takes much longer. Neither activates mods or launches the game; no game assets are "
+                          "exported."
                         : env.state.diagnostics.progress + " " + env.state.diagnostics.lastExport,
                     {infoX, y + 16, infoW, 120},
                     TextStyle{FontRole::Caption, theme::kTextSecondary, TextAlign::Left, false}, 38, 3);

@@ -50,7 +50,7 @@ public:
     void runSystemCheck() override;
     void refreshLibrary() override;
     Status saveSettings(const database::Settings& settings) override;
-    void exportDiagnostics(const std::string& titleId = {}) override;
+    void exportDiagnostics(const std::string& titleId = {}, bool deep = false) override;
     void cancelDiagnostics() override;
     std::vector<logging::LogRecord> recentLogs() override;
     Status cleanInterruptedOperation() override;
