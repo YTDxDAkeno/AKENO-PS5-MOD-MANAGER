@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Doctest.hpp"
 
+#include <algorithm>
 #include <map>
 
 #include "TestSupport.hpp"
@@ -59,8 +60,11 @@ TEST_CASE("one packaging wrapper around a flat Unreal package set: candidate ~mo
     CHECK(layout.targetPrefix == "dawnwalker/content/paks/~mods");
     CHECK(layout.anchor == "dawnwalker/content/paks");
     auto m = mapping(layout);
+    // Every name in the game is lower case, so the new names are lower-cased too.
     CHECK(m["Better Carry Weight x10/00000000_BetterCarryWeightx10_P.pak"] ==
-          "dawnwalker/content/paks/~mods/00000000_BetterCarryWeightx10_P.pak");
+          "dawnwalker/content/paks/~mods/00000000_bettercarryweightx10_p.pak");
+    CHECK(std::any_of(layout.evidence.begin(), layout.evidence.end(),
+                      [](const std::string& e) { return e.find("lower-cased") != std::string::npos; }));
     CHECK(m.size() == 3);
     REQUIRE_FALSE(layout.problems.empty());
     CHECK(layout.problems.back().find("not verified") != std::string::npos);
@@ -82,8 +86,8 @@ TEST_CASE("nested PC packaging folders above an Unreal project layout are remove
     CHECK(layout.packagingFolders == std::vector<std::string>{"SomeMod", "Files", "Windows"});
     CHECK(layout.targetPrefix == "dawnwalker");
     auto m = mapping(layout);
-    // Existing folders take the game's spelling; ~mods (new) keeps the archive's.
-    CHECK(m["SomeMod/Files/Windows/Dawnwalker/Content/Paks/~mods/Mod_P.pak"] == "dawnwalker/content/paks/~mods/Mod_P.pak");
+    // Existing folders take the game's spelling; new names are lower-cased like the game's.
+    CHECK(m["SomeMod/Files/Windows/Dawnwalker/Content/Paks/~mods/Mod_P.pak"] == "dawnwalker/content/paks/~mods/mod_p.pak");
     CHECK(m.count("SomeMod/readme.txt") == 0);
     CHECK(layout.ignored.size() == 1);
 }
@@ -163,7 +167,7 @@ TEST_CASE("project-relative Content layouts map into the game's project folder")
     const auto layout = analyzeLayout(input({"Content/Paks/~mods/x_P.pak"}, &game));
     CHECK(layout.rule == "unreal");
     CHECK(layout.confidence == MappingConfidence::Likely);
-    CHECK(mapping(layout)["Content/Paks/~mods/x_P.pak"] == "dawnwalker/content/paks/~mods/x_P.pak");
+    CHECK(mapping(layout)["Content/Paks/~mods/x_P.pak"] == "dawnwalker/content/paks/~mods/x_p.pak");
 }
 
 TEST_CASE("documentation-only archives and unmatched layouts have no mapping") {
@@ -173,4 +177,25 @@ TEST_CASE("documentation-only archives and unmatched layouts have no mapping") {
     CHECK(layout.confidence == MappingConfidence::None);
     REQUIRE_FALSE(layout.problems.empty());
     CHECK(layout.problems[0].find("No folder of the archive") != std::string::npos);
+}
+
+TEST_CASE("new names are lower-cased only in games whose names are all lower case, never for manifests") {
+    // A game with mixed-case names (for example a PS4 title): the archive's spelling is kept.
+    const auto mixed = gameTree({"Game/", "Game/Content/", "Game/Content/Paks/", "Game/Content/Paks/Game-PS4.pak"});
+    CHECK_FALSE(mixed.lowerCaseNames());
+    auto layout = analyzeLayout(input({"Wrapper/My_Mod_P.pak"}, &mixed));
+    REQUIRE(layout.hasMapping());
+    CHECK(mapping(layout)["Wrapper/My_Mod_P.pak"] == "Game/Content/Paks/~mods/My_Mod_P.pak");
+    // An all-lower-case game.
+    const auto game = dawnwalker();
+    CHECK(game.lowerCaseNames());
+    // A curated manifest keeps the spelling its maintainers tested.
+    LayoutInput manifest = input({"Mod/Content/New_File.bin"}, &game);
+    manifest.manifestArchiveRoot = "Mod";
+    manifest.manifestTargetPrefix = "dawnwalker";
+    layout = analyzeLayout(manifest);
+    CHECK(mapping(layout)["Mod/Content/New_File.bin"] == "dawnwalker/Content/New_File.bin");
+    // Two archive files that differ only in case collide once lower-cased: no mapping.
+    layout = analyzeLayout(input({"Wrapper/a_P.pak", "Wrapper/A_P.pak"}, &game));
+    CHECK_FALSE(layout.hasMapping());
 }

@@ -66,7 +66,8 @@ std::string_view toString(LoadingSupport value) noexcept;
 std::optional<LoadingSupport> parseLoadingSupport(std::string_view text) noexcept;
 
 enum class EvidenceKind { Supports, Against, Limitation };
-enum class EvidenceSource { Archive, Container, Game, Catalogue, Adapter, Rules };
+// Report: the user's own test results on this console (see install::TestResult).
+enum class EvidenceSource { Archive, Container, Game, Catalogue, Adapter, Rules, Report };
 std::string_view toString(EvidenceKind kind) noexcept;
 std::string_view toString(EvidenceSource source) noexcept;
 
@@ -116,11 +117,20 @@ public:
     virtual std::string id() const = 0;
     virtual bool appliesTo(std::string_view titleId) const = 0;
     virtual std::vector<LoadingConvention> conventions() const = 0;
+    // Adapter: curated per-title knowledge. Report: the user's own test results on this console.
+    virtual EvidenceSource evidenceSource() const { return EvidenceSource::Adapter; }
     // A hardware-verified record for this exact mod version on this title and game version.
     virtual bool modVerified(const ModFacts& mod, const GameFacts& game) const {
         (void)mod;
         (void)game;
         return false;
+    }
+    // A recorded problem with this exact mod version on this title and game version (for example
+    // a crash the user reported after a test). Rules out another test.
+    virtual std::optional<std::string> knownProblem(const ModFacts& mod, const GameFacts& game) const {
+        (void)mod;
+        (void)game;
+        return std::nullopt;
     }
 };
 
@@ -166,6 +176,15 @@ struct Assessment {
     std::string adapter;                     // adapter that contributed, if any
     std::string region;                      // from the content id, informational
     std::string summary;
+
+    // Test install. A PC mod that Akeno does not activate on its own may be installed as a test
+    // after the user confirms its risks, when it consists only of data-only Unreal package sets
+    // (no code, no loader, no textures, meshes, audio or shaders), every file is added to the
+    // game's own package folder without replacing a game file, and every check that can be made
+    // on the console passed. Not offered for curated or unknown sources.
+    bool testInstallAvailable = false;
+    std::vector<std::string> testBlockers;   // why a test is not offered
+    std::vector<std::string> testRisks;      // shown before the user confirms a test
 };
 
 Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& registry = Registry::builtin());

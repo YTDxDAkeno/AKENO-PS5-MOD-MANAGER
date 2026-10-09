@@ -160,6 +160,12 @@ public:
     }
     void cancelCheck() override { ++checkCancels; }
     void installChecked(const std::string& id) override { installs.push_back(id); }
+    void testInstallChecked(const std::string& id, install::TestPlacement placement) override {
+        testInstalls.emplace_back(id, placement);
+    }
+    void reportTestResult(const std::string& titleId, const std::string& id, install::TestResult result) override {
+        testReports.push_back({titleId, id, result});
+    }
     void setGameVanilla(const std::string& titleId) override { vanillas.push_back(titleId); }
     ui::InstalledModsSummary installedMods(const std::string& titleId) override {
         auto it = installedSummaries.find(titleId);
@@ -177,6 +183,13 @@ public:
     std::vector<std::string> toggles;
     std::vector<std::string> removals;
     std::vector<std::string> installs;
+    std::vector<std::pair<std::string, install::TestPlacement>> testInstalls;
+    struct TestReport {
+        std::string titleId;
+        std::string downloadId;
+        install::TestResult result;
+    };
+    std::vector<TestReport> testReports;
     std::vector<std::string> vanillas;
     std::map<std::string, ui::InstalledModsSummary> installedSummaries;
     void requestTextInput(const std::string& prompt, const std::string& initial,

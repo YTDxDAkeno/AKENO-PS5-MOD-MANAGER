@@ -28,8 +28,11 @@ void GameTree::index() {
     std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
     lookup_.clear();
     caseCollisions = 0;
+    lowerCaseOnly_ = !entries.empty();
     for (std::size_t i = 0; i < entries.size(); ++i) {
-        if (!lookup_.emplace(strings::toLowerAscii(entries[i].path), i).second) ++caseCollisions;
+        const std::string folded = strings::toLowerAscii(entries[i].path);
+        if (folded != entries[i].path) lowerCaseOnly_ = false;
+        if (!lookup_.emplace(folded, i).second) ++caseCollisions;
     }
 }
 

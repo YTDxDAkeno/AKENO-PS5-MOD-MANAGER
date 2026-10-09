@@ -22,5 +22,5 @@ own site and PC mod managers use it, tested with recorded answers.
   confirmation for downloading; Windows programs, script loaders and console code
   are refused. The check maps the archive onto the installed game and explains
   the result; PC files are activated only with recorded evidence for the game
-  version (see [compatibility-engine.md](compatibility-engine.md)), which no
-  title has yet.
+  version (see [compatibility-engine.md](compatibility-engine.md)), or installed
+  as a user-confirmed test install when they qualify for one.

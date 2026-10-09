@@ -129,6 +129,24 @@ third need a deliberate hardware test, outside Akeno's automatic paths. The inst
 0.2.0-alpha (wrapper folder at the overlay root) is inert in the observed layout and can be
 turned off in Installed Mods, which removes Akeno's overlay; Akeno will not activate it again.
 
+### Update 2026-10-09: testing it on the console
+
+Follow-up research (`docs/investigations/pc-unreal-mods-on-ps5.md`) found no public evidence either
+way for PS5 builds, and confirmed that the SMP overlay makes added files visible to the game. Akeno
+now offers Better Carry Weight x10 as a **test install**: every console-side check passes (data-only
+IoStore set, same IoStore version as the game, all imports present, game containers unsigned,
+files only added). Procedure:
+
+1. Back up the PPSA28000 saved data.
+2. Downloads → the mod → check → CROSS ("Test install") → confirm. Files go to
+   `dawnwalker/content/paks/~mods/00000000_bettercarryweightx10_p.{pak,utoc,ucas}` (lower case,
+   like every PS5 game file). The old 0.2.0-alpha copy of the same download is replaced.
+3. Start the game; check the carry weight.
+4. Installed Mods → OPTIONS → *It works* / *No effect in the game* / *The game crashed or did not
+   start*. A crash turns the mod off.
+5. With *no effect*: open the check again and press SQUARE to test it directly in
+   `dawnwalker/content/paks/` (this replaces the first test install).
+
 ## ShadowMountPlus integration notes
 
 * Scan-root precedence: the diagnostic model (owning root first, then configured roots, then

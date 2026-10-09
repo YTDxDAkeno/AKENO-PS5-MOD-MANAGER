@@ -143,6 +143,24 @@ game's loading support and PS5 compatibility shown separately. Mods from PC site
 and explained, but only activated with recorded evidence for the exact game version. See
 [docs/compatibility-engine.md](docs/compatibility-engine.md).
 
+### Testing PC mods (Unreal Engine)
+
+Whether a PS5 build loads a PC mod's package files is something only the console can show
+([research](docs/investigations/pc-unreal-mods-on-ps5.md)). For **data-only** Unreal mods (for
+example gameplay-value changes such as Better Carry Weight x10) whose every console-side check
+passes, the check screen offers a **test install**:
+
+1. Back up the game's saved data.
+2. Downloads → open the mod → **CROSS: Test install** (files go to `<project>/content/paks/~mods`)
+   or **SQUARE: Test in Paks** (directly in `<project>/content/paks`), then confirm.
+3. Start the game and look for the mod's effect.
+4. Installed Mods → **OPTIONS** → *It works*, *No effect in the game* or *The game crashed or did
+   not start*. A crash turns the mod off and keeps it off; *it works* is kept as evidence for that
+   game version.
+
+Not offered for mods with textures, meshes, audio or shaders (PC formats), code or loaders
+(UE4SS, DLLs), encrypted containers, signed games, or files that would replace game files.
+
 ## Unsupported mod types
 
 * Anything that ships native code: Windows `.exe` / `.dll` (e.g. `dinput8.dll`,

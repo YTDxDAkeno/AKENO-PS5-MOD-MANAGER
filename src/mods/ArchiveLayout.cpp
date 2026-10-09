@@ -54,7 +54,24 @@ std::optional<std::size_t> unrealAnchor(const std::vector<std::string>& parts, c
     return std::nullopt;
 }
 
-void finishMapping(ArchiveLayout& layout) {
+void finishMapping(ArchiveLayout& layout, const games::GameTree* game = nullptr) {
+    // PS5 packages store every game file under a lower-case name, and the console's filesystems
+    // are case-sensitive: in such a game, new files and folders are lower-cased as well, so a
+    // lookup that lower-cases its path finds them. Curated manifests keep their tested spelling.
+    if (game != nullptr && game->lowerCaseNames() && layout.rule != "manifest" && !layout.mapping.empty()) {
+        std::string example;
+        for (auto& [archivePath, installPath] : layout.mapping) {
+            const std::string folded = strings::toLowerAscii(installPath);
+            if (folded != installPath && example.empty()) example = inQuotes(installPath) + " -> " + inQuotes(folded);
+            installPath = folded;
+        }
+        layout.targetPrefix = strings::toLowerAscii(layout.targetPrefix);
+        if (!example.empty()) {
+            layout.evidence.push_back("Every file and folder name of the installed game is lower case, as PS5 packages store "
+                                      "them, and the filesystem is case-sensitive: new names are lower-cased to match (" +
+                                      example + ").");
+        }
+    }
     // Two archive files must never land on the same game path.
     std::map<std::string, std::string> seen;
     for (const auto& [archivePath, installPath] : layout.mapping) {
@@ -134,7 +151,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             }
             layout.mapping.emplace_back(file->path, install);
         }
-        finishMapping(layout);
+        finishMapping(layout, game);
         return layout;
     }
 
@@ -151,7 +168,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
     if (core.empty()) {
         layout.problems.push_back("The archive contains only documentation.");
         for (const auto* file : primary) layout.ignored.emplace_back(file->path, "documentation");
-        finishMapping(layout);
+        finishMapping(layout, game);
         return layout;
     }
     std::vector<std::string> common = components(core.front()->path);
@@ -197,7 +214,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
                                             "read to find its project folder."
                                           : "The archive starts at the Content folder, but the game has no single "
                                             "<project>/content/paks folder.");
-            finishMapping(layout);
+            finishMapping(layout, game);
             return layout;
         }
         layout.confidence = MappingConfidence::Likely;
@@ -212,7 +229,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             }
             layout.mapping.emplace_back(file->path, game->respell(project + "/" + file->path));
         }
-        finishMapping(layout);
+        finishMapping(layout, game);
         return layout;
     }
     if (anchorIndex && !impliedProject) {
@@ -221,7 +238,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             layout.confidence = MappingConfidence::Ambiguous;
             layout.problems.push_back("Some files are inside an Unreal project folder and others are not (for example " +
                                       inQuotes(unanchored) + "), so the archive has no single layout.");
-            finishMapping(layout);
+            finishMapping(layout, game);
             return layout;
         }
         if (projects.size() > 1) {
@@ -230,7 +247,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             for (const auto& project : projects) list += list.empty() ? project : ", " + project;
             layout.problems.push_back("The archive contains several Unreal project folders (" + list +
                                       "), for example alternative versions of the mod. Akeno does not choose one.");
-            finishMapping(layout);
+            finishMapping(layout, game);
             return layout;
         }
         const std::size_t i = *anchorIndex;
@@ -265,7 +282,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
                 layout.confidence = MappingConfidence::None;
                 layout.problems.push_back("The installed game has no " + inQuotes(project) +
                                           " folder and no Unreal Content/Paks folder.");
-                finishMapping(layout);
+                finishMapping(layout, game);
                 return layout;
             }
         } else {
@@ -288,7 +305,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             if (game != nullptr) install = game->respell(install);
             layout.mapping.emplace_back(file->path, install);
         }
-        finishMapping(layout);
+        finishMapping(layout, game);
         return layout;
     }
 
@@ -344,7 +361,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
                 }
                 layout.mapping.emplace_back(file->path, game->respell(join(rel)));
             }
-            finishMapping(layout);
+            finishMapping(layout, game);
             return layout;
         }
     }
@@ -365,7 +382,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             layout.problems.push_back(game == nullptr
                                           ? "The game's files could not be read, so its Content/Paks folder is unknown."
                                           : "The installed game has no single <project>/content/paks folder.");
-            finishMapping(layout);
+            finishMapping(layout, game);
             return layout;
         }
         layout.confidence = MappingConfidence::Candidate;
@@ -388,7 +405,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
             }
             layout.mapping.emplace_back(file->path, layout.targetPrefix + "/" + components(file->path).back());
         }
-        finishMapping(layout);
+        finishMapping(layout, game);
         return layout;
     }
 
@@ -403,7 +420,7 @@ ArchiveLayout analyzeLayout(const LayoutInput& input) {
         layout.problems.push_back("Loose Unreal assets need their Content/... folder path to be placed.");
     }
     for (const auto* file : primary) layout.ignored.emplace_back(file->path, "no destination");
-    finishMapping(layout);
+    finishMapping(layout, game);
     return layout;
 }
 

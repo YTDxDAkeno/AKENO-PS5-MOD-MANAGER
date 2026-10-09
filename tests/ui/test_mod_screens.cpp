@@ -904,3 +904,109 @@ TEST_CASE("the check shows the original layout, the proposed mapping and why act
     CHECK(dynamic_cast<ConfirmScreen*>(host.top()) == nullptr);
     CHECK(h.commands.installs.empty());
 }
+
+TEST_CASE("a PC mod the check offers a test for: CROSS asks first, SQUARE tests in the package folder") {
+    test::UiHarness h;
+    auto d = details(true);
+    h.state.downloads.items = {downloadOf(d, downloads::DownloadState::Completed, 1000, "dac30f1aa5840955")};
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    host.handle(Action::Confirm, h.env);
+    auto* check = dynamic_cast<ModCheckScreen*>(host.top());
+    REQUIRE(check != nullptr);
+    test::RecordingCanvas first;
+    host.render(first, h.env);
+    h.state.check.downloadId = "dac30f1aa5840955";
+    h.state.check.running = false;
+    auto report = betterCarryWeightReport();
+    report.assessment.testInstallAvailable = true;
+    report.assessment.testRisks = {"Nothing confirms that this PS5 game loads extra package files from "
+                                   "dawnwalker/content/paks/~mods.",
+                                   "Back up your saved data before playing."};
+    h.state.check.report = report;
+    std::vector<std::string> seen;
+    for (int page = 0; page < 12; ++page) {
+        test::RecordingCanvas canvas;
+        host.render(canvas, h.env);
+        for (const auto& text : canvas.texts) seen.push_back(text);
+        host.handle(Action::PageDown, h.env);
+    }
+    auto has = [&](const std::string& text) {
+        return std::any_of(seen.begin(), seen.end(), [&](const std::string& s) { return s.find(text) != std::string::npos; });
+    };
+    CHECK(has("TEST POSSIBLE"));
+    CHECK(has("Activation: not automatic; a test install is possible (CROSS)"));
+    CHECK(has("Test install (your decision)"));
+    CHECK(has("SQUARE: test it directly in dawnwalker/content/paks instead of dawnwalker/content/paks/~mods"));
+    CHECK(has("Back up your saved data"));
+    const auto hints = check->hints(h.env);
+    CHECK(std::any_of(hints.begin(), hints.end(), [](const ButtonHint& hint) { return hint.label == "Test install"; }));
+    CHECK(std::any_of(hints.begin(), hints.end(), [](const ButtonHint& hint) { return hint.label == "Test in Paks"; }));
+
+    // CROSS: the confirmation names the folder and the risks; Cancel is focused first.
+    host.handle(Action::Confirm, h.env);
+    auto* confirm = dynamic_cast<ConfirmScreen*>(host.top());
+    REQUIRE(confirm != nullptr);
+    CHECK(confirm->title() == "Test this PC mod?");
+    test::RecordingCanvas dialog;
+    host.render(dialog, h.env);
+    CHECK(dialog.hasText("dawnwalker/content/paks/~mods/"));
+    host.handle(Action::Confirm, h.env);  // Cancel
+    { test::RecordingCanvas tick; host.render(tick, h.env); }  // the check screen picks up the answer
+    CHECK(h.commands.testInstalls.empty());
+    host.handle(Action::Confirm, h.env);
+    host.handle(Action::Up, h.env);
+    host.handle(Action::Confirm, h.env);  // Test install
+    { test::RecordingCanvas tick; host.render(tick, h.env); }  // the check screen picks up the answer
+    REQUIRE(h.commands.testInstalls.size() == 1);
+    CHECK(h.commands.testInstalls[0].first == "dac30f1aa5840955");
+    CHECK(h.commands.testInstalls[0].second == install::TestPlacement::ModsFolder);
+    CHECK(h.commands.installs.empty());
+
+    // SQUARE: the package folder itself.
+    host.handle(Action::Tertiary, h.env);
+    REQUIRE(dynamic_cast<ConfirmScreen*>(host.top()) != nullptr);
+    test::RecordingCanvas paks;
+    host.render(paks, h.env);
+    CHECK(paks.hasText("go to dawnwalker/content/paks/ in"));
+    host.handle(Action::Up, h.env);
+    host.handle(Action::Confirm, h.env);
+    { test::RecordingCanvas tick; host.render(tick, h.env); }  // the check screen picks up the answer
+    REQUIRE(h.commands.testInstalls.size() == 2);
+    CHECK(h.commands.testInstalls[1].second == install::TestPlacement::PaksFolder);
+}
+
+TEST_CASE("the check names why no test install is offered") {
+    test::UiHarness h;
+    auto d = details(true);
+    h.state.downloads.items = {downloadOf(d, downloads::DownloadState::Completed, 1000, "dac30f1aa5840955")};
+    ScreenHost host;
+    host.setTabRoot(Tab::Downloads, std::make_unique<DownloadsScreen>());
+    host.switchTab(Tab::Downloads);
+    host.handle(Action::Confirm, h.env);
+    test::RecordingCanvas first;
+    host.render(first, h.env);
+    h.state.check.downloadId = "dac30f1aa5840955";
+    h.state.check.running = false;
+    auto report = betterCarryWeightReport();
+    report.assessment.testBlockers = {"The game's own containers are signed."};
+    h.state.check.report = report;
+    std::vector<std::string> seen;
+    for (int page = 0; page < 12; ++page) {
+        test::RecordingCanvas canvas;
+        host.render(canvas, h.env);
+        for (const auto& text : canvas.texts) seen.push_back(text);
+        host.handle(Action::PageDown, h.env);
+    }
+    auto has = [&](const std::string& text) {
+        return std::any_of(seen.begin(), seen.end(), [&](const std::string& s) { return s.find(text) != std::string::npos; });
+    };
+    CHECK(has("No test install, because"));
+    CHECK(has("The game's own containers are signed."));
+    CHECK_FALSE(has("TEST POSSIBLE"));
+    host.handle(Action::Tertiary, h.env);
+    host.handle(Action::Confirm, h.env);
+    CHECK(dynamic_cast<ConfirmScreen*>(host.top()) == nullptr);
+    CHECK(h.commands.testInstalls.empty());
+}

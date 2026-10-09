@@ -166,8 +166,9 @@ it does not change installation destinations or authorize activation.
 * Independent copies are used for overlays; no hard-link behavior is assumed.
 * Does the PS5 build of an Unreal title (first candidates: Stellar Blade,
   PPSA28000) load additional `.pak`/`.utoc`/`.ucas` files from
-  `<project>/content/paks/~mods`, or only replacements of existing files?
-  Until a test answers this per title and version, Akeno treats `~mods` as a
-  candidate path and does not activate PC package sets there.
+  `<project>/content/paks/~mods`, or from `<project>/content/paks` itself?
+  Akeno does not activate PC package sets there on its own; a user-confirmed
+  test install (`docs/investigations/pc-unreal-mods-on-ps5.md`) answers it per
+  title and version, and the user's report is kept as evidence.
 * Does the SMP permission repair run on Akeno-published directories before
   the next launch? The effect on launch behavior remains unverified.

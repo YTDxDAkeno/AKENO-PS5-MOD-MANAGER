@@ -416,6 +416,58 @@ TEST_CASE("installed mods can be turned off, removed, and a game switched to Van
     CHECK(h.commands.vanillas[0] == "PPSA24701");
 }
 
+TEST_CASE("test installs show their state and take a result; old PC installs explain why they stay off") {
+    test::UiHarness h;
+    InstalledModsScreen screen;
+    InstalledModRow testRow{"PPSA28000", "Dawnwalker", "dac30f1aa5840955", "Better Carry Weight x10", "1.0", "nexus",
+                            true, true, 171827};
+    testRow.test = true;
+    testRow.testFolder = "dawnwalker/content/paks/~mods";
+    InstalledModRow legacy{"PPSA28000", "Dawnwalker", "cccc3333", "Old PC mod", "1.0", "nexus", false, true, 10};
+    legacy.note = "Installed by an older Akeno without a checked path.";
+    h.commands.installedRows = {testRow, legacy};
+    test::RecordingCanvas canvas;
+    screen.render(canvas, h.env);
+    CHECK(canvas.hasText("TEST"));
+    CHECK(canvas.hasText("Test in dawnwalker/content/paks/~mods: not reported yet"));
+    CHECK(canvas.hasText("Installed by an older Akeno"));
+    const auto hints = screen.hints(h.env);
+    CHECK(std::any_of(hints.begin(), hints.end(), [](const ButtonHint& hint) { return hint.label == "Test result"; }));
+
+    auto nav = screen.handle(Action::Options, h.env);
+    auto* result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    test::RecordingCanvas dialog;
+    result->render(dialog, h.env);
+    CHECK(dialog.hasText("How did the test go?"));
+    CHECK(dialog.hasText("The game crashed or did not start"));
+    CHECK(result->handle(Action::Confirm, h.env).kind == NavRequest::Kind::Pop);  // Cancel is focused first
+    CHECK(h.commands.testReports.empty());
+    nav = screen.handle(Action::Options, h.env);
+    result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    for (int i = 0; i < 3; ++i) result->handle(Action::Up, h.env);
+    result->handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.testReports.size() == 1);
+    CHECK(h.commands.testReports[0].downloadId == "dac30f1aa5840955");
+    CHECK(h.commands.testReports[0].result == install::TestResult::Works);
+    nav = screen.handle(Action::Options, h.env);
+    result = dynamic_cast<TestResultScreen*>(nav.screen.get());
+    REQUIRE(result != nullptr);
+    result->handle(Action::Up, h.env);  // "The game crashed or did not start"
+    result->handle(Action::Confirm, h.env);
+    REQUIRE(h.commands.testReports.size() == 2);
+    CHECK(h.commands.testReports[1].result == install::TestResult::Crashed);
+
+    // The old install: CROSS explains instead of turning it on, OPTIONS has nothing to report.
+    screen.handle(Action::Down, h.env);
+    screen.handle(Action::Confirm, h.env);
+    CHECK(h.commands.toggles.empty());
+    REQUIRE_FALSE(h.toasts.empty());
+    CHECK(h.toasts.back().find("older Akeno") != std::string::npos);
+    CHECK(screen.handle(Action::Options, h.env).screen == nullptr);
+}
+
 TEST_CASE("diagnostic export is available per game without enabling mods") {
     test::UiHarness h;
     games::GameInfo game;

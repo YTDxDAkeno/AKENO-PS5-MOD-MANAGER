@@ -71,6 +71,8 @@ public:
     void checkDownload(const std::string& id, bool again) override;
     void cancelCheck() override;
     void installChecked(const std::string& downloadId) override;
+    void testInstallChecked(const std::string& downloadId, install::TestPlacement placement) override;
+    void reportTestResult(const std::string& titleId, const std::string& downloadId, install::TestResult result) override;
     void setGameVanilla(const std::string& titleId) override;
     InstalledModsSummary installedMods(const std::string& titleId) override;
     bool installBusy() const override { return installing_ || state_.diagnostics.running; }
@@ -120,9 +122,17 @@ private:
     bool installing_ = false;  // one install or Vanilla at a time; never during a check
     std::unordered_map<std::string, InstalledModsSummary> modSummaries_;  // read once, dropped after changes
     std::optional<std::vector<InstalledModRow>> installedRows_;            // same
+    struct ChangeMessage {
+        std::string text;
+        ToastKind kind = ToastKind::Success;
+    };
     // Runs one change to installed mods on the worker; `work` returns the message to show.
-    void runModChange(std::function<Result<std::string>(install::InstallEnvironment&)> work);
+    void runModChange(std::function<Result<ChangeMessage>(install::InstallEnvironment&)> work);
+    void installDownload(const std::string& downloadId, std::optional<install::TestPlacement> test);
+    install::InstallEnvironment installEnvironment(bool interrupted) const;
     std::vector<mods::InstalledModPaths> installedModPaths(const std::string& titleId) const;
+    // The user's test reports for the title, and the registry that adds them to the built-in one.
+    std::vector<install::TestRecord> testRecords(const std::string& titleId) const;
     install::TitleTarget targetFor(const std::string& titleId) const;
 };
 

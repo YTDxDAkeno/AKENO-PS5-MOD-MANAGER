@@ -4,11 +4,30 @@ All notable changes to this project are documented here. The project follows
 semantic versioning once it reaches 1.0. Until then, minor versions may change
 anything.
 
-## [Unreleased] - installation mapping, Unreal analysis, compatibility engine
+## [Unreleased] - installation mapping, Unreal analysis, compatibility engine, PC mod tests
 
 Host tested (unit, sanitizer, offscreen UI); **not hardware tested**. No game was launched.
 
+### Added (PC mod tests)
+- **Test installs** for PC Unreal mods: when activation is blocked only for lack of evidence and
+  every console-side check passes (verified data-only package sets: no bulk data, shaders, code or
+  loaders; no encryption; versions and imports match the installed game; game containers not
+  signed; files only added inside the game's package folder), the check screen offers CROSS
+  "Test install" (`<paks>/~mods`) and SQUARE "Test in Paks" (`<paks>`) after a risk
+  confirmation. Research and sources: `docs/investigations/pc-unreal-mods-on-ps5.md`.
+- Test results in Installed Mods (OPTIONS): works / no effect / crashed. "Works" becomes local
+  evidence for that game version (evidence source `report`); "crashed" turns the mod off, keeps
+  it off and rules out another test of that mod version on that game version. Stored checks are
+  redone when reports change (check report schema 3).
+- In games whose every file name is lower case (PS5 packages), new files and folders are
+  lower-cased as well.
+- A classic `.pak` with cooked packages for an IoStore game is NEEDS_CONVERSION.
+
 ### Fixed
+- One mod installed by 0.2.0-alpha without a checked path made every overlay change of the game
+  fail ("installed without a verified installation path"), so no mod could be activated any more.
+  Such mods are now turned off with an explanation and the other mods are applied; installing the
+  same download again replaces the old copy.
 - Archives from Nexus Mods and GameBanana were installed with their packaging folder at the
   root of the overlay (PPSA28000: `backports/PPSA28000/Better Carry Weight x10/...`). Every
   archive now goes through a layout analysis that separates packaging folders from game paths.
@@ -41,9 +60,9 @@ Host tested (unit, sanitizer, offscreen UI); **not hardware tested**. No game wa
 - Demo catalogue containers are structurally valid; `tests/fixtures/mods/better-carry-weight-x10`.
 
 ### Changed
-- PC mods (Nexus Mods, GameBanana) are installed only with recorded evidence for the title and
-  game version (a game adapter). None ships, so they are analysed and explained, not activated.
-  PC mods installed by 0.2.0-alpha can be turned off or removed, not re-activated.
+- PC mods (Nexus Mods, GameBanana) are activated only with recorded evidence for the title and
+  game version (a game adapter, or the user's own test report), or installed as a user-confirmed
+  test install. PC mods installed by 0.2.0-alpha are turned off, not re-activated.
 - `.pak/.utoc/.ucas` files that do not parse, are incomplete or fail their hashes block
   installation (category D), also for catalogue entries.
 

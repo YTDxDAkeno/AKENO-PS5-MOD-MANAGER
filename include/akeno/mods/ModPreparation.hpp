@@ -58,6 +58,8 @@ struct PreparationRequest {
     bool catalogueInstallable = false;
     std::vector<InstalledModPaths> installedMods;  // other mods installed for the game
     const compatibility::Registry* registry = nullptr;  // default: the built-in registry
+    // Test installs only: package files the layout puts into <paks>/~mods go into <paks> itself.
+    bool paksFolderPlacement = false;
     const CancellationToken* cancel = nullptr;
     games::GameTreeLimits treeLimits{};
     unreal::UnrealLimits unrealLimits{};
@@ -71,6 +73,7 @@ struct Preparation {
     unreal::GameUnrealFacts gameUnreal;
     std::vector<Conflict> installedConflicts;
     compatibility::Assessment assessment;
+    bool placementApplied = false;  // paksFolderPlacement moved every ~mods file
 };
 
 Preparation prepareMod(const PreparationRequest& request);

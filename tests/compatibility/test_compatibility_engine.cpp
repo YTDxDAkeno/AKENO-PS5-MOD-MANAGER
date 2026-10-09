@@ -3,6 +3,7 @@
 
 #include "TestSupport.hpp"
 #include "akeno/compatibility/CompatibilityEngine.hpp"
+#include "akeno/install/TestReports.hpp"
 
 using namespace akeno;
 using namespace akeno::compatibility;
@@ -51,6 +52,12 @@ struct Case {
         input.catalogueInstallable = true;
         input.mapping = layout.mapping;
         analysis = mods::analyzeMod(input);
+        for (auto& f : analysis.files) {  // as prepareMod does (without type conflicts)
+            if (f.installPath.empty()) continue;
+            f.target = tree.find(f.installPath) != nullptr ? mods::TargetState::Replaces
+                       : tree.complete                     ? mods::TargetState::New
+                                                           : mods::TargetState::Unknown;
+        }
         mod.provider = curated ? "akeno-catalogue" : "nexus";
         mod.curated = curated;
         mod.pcSource = !curated;
@@ -232,6 +239,102 @@ TEST_CASE("Unreal mods for a game without Unreal containers, and loose assets fo
     CHECK(std::any_of(a.evidence.begin(), a.evidence.end(), [](const Evidence& e) {
         return e.text.find("No conversion for this game is available") != std::string::npos;
     }));
+}
+
+TEST_CASE("a classic .pak with cooked packages for an IoStore game needs a conversion, and no test is offered") {
+    Case c;
+    c.file("Game/Content/Paks/~mods/Hero_P.pak");
+    c.unreal.detected = true;
+    unreal::PackageSet set;
+    set.stem = "Hero_P";
+    set.kind = unreal::PackageSetKind::LegacyPak;
+    set.members = {"Game/Content/Paks/~mods/Hero_P.pak"};
+    set.hasPak = true;
+    unreal::PakFile pak;
+    pak.status = unreal::ParseStatus::Parsed;
+    pak.version = 8;
+    pak.files = {"../../../Game/Content/Characters/Hero.uasset", "../../../Game/Content/Characters/Hero.uexp"};
+    pak.filesComplete = true;
+    set.pak = pak;
+    c.unreal.sets.push_back(set);
+    c.unreal.maxPakVersion = 8;
+    c.gameUnreal.probed = true;
+    c.gameUnreal.paksDirectory = "Game/Content/Paks";
+    c.gameUnreal.maxTocVersion = 8;
+    c.gameUnreal.maxPakVersion = 11;
+    c.gameUnreal.containersComplete = true;
+    const auto a = c.run(false, CompatibilityStatus::Experimental);
+    CHECK(a.outcome == Outcome::NeedsConversion);
+    CHECK_FALSE(a.testInstallAvailable);
+    CHECK(mentions(a.testBlockers, "conversion"));
+    // Without IoStore in the game, the same .pak is a candidate for a test.
+    Case classic = c;
+    classic.gameUnreal.maxTocVersion = 0;
+    classic.gameUnreal.containersComplete = false;
+    const auto b = classic.run(false, CompatibilityStatus::Experimental);
+    CHECK(b.outcome != Outcome::NeedsConversion);
+    CHECK(b.testInstallAvailable);
+    // Curated mods never get a test install: the catalogue decides for them.
+    Case curated = classic;
+    CHECK_FALSE(curated.run(true, CompatibilityStatus::Unknown).testInstallAvailable);
+}
+
+TEST_CASE("test reports count for their title and game version only, and crashes rule out another test") {
+    install::TestRecord works;
+    works.titleId = "PPSA90001";
+    works.provider = "nexus";
+    works.modId = "7";
+    works.modVersion = "1.0";
+    works.name = "Mod";
+    works.gameVersion = "01.000.000";
+    works.directory = "Game/Content/Paks/~mods";
+    works.result = install::TestResult::Works;
+    works.reportedAt = "2026-10-09T10:00:00Z";
+    const auto adapter = install::makeTestReportAdapter("PPSA90001", {works});
+    CHECK(adapter->appliesTo("PPSA90001"));
+    CHECK_FALSE(adapter->appliesTo("PPSA90002"));
+    CHECK(adapter->evidenceSource() == EvidenceSource::Report);
+    REQUIRE(adapter->conventions().size() == 1);
+    CHECK(adapter->conventions()[0].verifiedVersions == std::vector<std::string>{"01.000.000"});
+    CHECK_FALSE(adapter->conventions()[0].pcCookedAssetsVerified);
+    ModFacts mod;
+    mod.provider = "nexus";
+    mod.modId = "7";
+    mod.modVersion = "1.0";
+    GameFacts game;
+    game.titleId = "PPSA90001";
+    game.version = "01.000.000";
+    CHECK(adapter->modVerified(mod, game));
+    game.version = "01.001.000";
+    CHECK_FALSE(adapter->modVerified(mod, game));
+    game.version = "01.000.000";
+    mod.modVersion = "1.1";
+    CHECK_FALSE(adapter->modVerified(mod, game));
+    CHECK_FALSE(adapter->knownProblem(mod, game).has_value());
+
+    install::TestRecord crashed = works;
+    crashed.result = install::TestResult::Crashed;
+    const auto crash = install::makeTestReportAdapter("PPSA90001", {crashed});
+    CHECK(crash->conventions().empty());
+    mod.modVersion = "1.0";
+    REQUIRE(crash->knownProblem(mod, game).has_value());
+    CHECK(crash->knownProblem(mod, game)->find("crashed this game") != std::string::npos);
+    // A game version that is unknown matches nothing.
+    crashed.gameVersion.clear();
+    CHECK_FALSE(install::makeTestReportAdapter("PPSA90001", {crashed})->knownProblem(mod, game).has_value());
+    // Untested and no-effect reports add no adapter and change no stamp.
+    install::TestRecord pending = works;
+    pending.result = install::TestResult::NoEffect;
+    CHECK(install::registryWithReports("PPSA90001", {pending}).adapters().empty());
+    CHECK(install::evidenceStamp({pending}).empty());
+    CHECK(install::registryWithReports("PPSA90001", {works}).adapters().size() == 1);
+    CHECK(install::evidenceStamp({works}) != install::evidenceStamp({crashed}));
+    for (auto result : {install::TestResult::Untested, install::TestResult::Works, install::TestResult::NoEffect,
+                        install::TestResult::Crashed}) {
+        CHECK(install::parseTestResult(install::toString(result)) == result);
+    }
+    CHECK(install::parseTestPlacement("paks-folder") == install::TestPlacement::PaksFolder);
+    CHECK_FALSE(install::parseTestPlacement("elsewhere").has_value());
 }
 
 TEST_CASE("conversion providers are offered only when they declare they apply") {

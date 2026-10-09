@@ -188,6 +188,23 @@ private:
     int scroll_ = 0;
     int maxScroll_ = 0;
     ChoiceRequest confirmInstall_;
+    ChoiceRequest confirmTest_;      // test install in the folder the check proposes (~mods)
+    ChoiceRequest confirmTestPaks_;  // test install directly in the game's package folder
+};
+
+// What happened in the game after a test install: works, no effect, crashed (or cancel).
+class TestResultScreen final : public Screen {
+public:
+    TestResultScreen(InstalledModRow row);
+    std::string title() const override { return "Test result"; }
+    NavRequest handle(Action action, UiEnv& env) override;
+    void render(ICanvas& canvas, UiEnv& env) override;
+    std::vector<ButtonHint> hints(const UiEnv& env) const override;
+    bool fullScreen() const override { return true; }
+
+private:
+    InstalledModRow row_;
+    FocusList choices_;
 };
 
 // A yes/no question. Cancel is focused first; CIRCLE also cancels.

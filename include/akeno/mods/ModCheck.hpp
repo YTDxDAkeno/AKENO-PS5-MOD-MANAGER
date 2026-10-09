@@ -47,6 +47,9 @@ struct ModCheckRequest {
     std::string gameFolder;           // physical folder of a folder game; empty otherwise
     std::vector<InstalledModPaths> installedMods;
     const compatibility::Registry* registry = nullptr;
+    // Identifies the user's test reports for the game that `registry` includes; a stored report
+    // made with other reports is checked again.
+    std::string localEvidence;
 };
 
 // What the report keeps about the mod's Unreal containers.
@@ -103,13 +106,14 @@ struct GameReport {
 };
 
 struct ModCheckReport {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
     std::string downloadId;
     providers::ModRef mod;
     std::string displayName;
     std::string modVersion;
     std::string titleId;
     std::string checkedAt;
+    std::string localEvidence;   // ModCheckRequest::localEvidence when it was made
     std::string archiveFormat;   // as libarchive names it
     std::size_t archiveFiles = 0;
     std::uint64_t unpackedBytes = 0;

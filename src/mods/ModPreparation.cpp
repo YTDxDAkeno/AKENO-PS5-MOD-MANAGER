@@ -64,6 +64,29 @@ Preparation prepareMod(const PreparationRequest& request) {
         layoutInput.manifestTargetPrefix = request.manifestTargetPrefix;
     }
     p.layout = analyzeLayout(layoutInput);
+    if (request.paksFolderPlacement && p.layout.hasMapping() && p.gameTree.available) {
+        // The package folder itself, where the game's own containers are: unlike ~mods, it needs
+        // no search of subfolders. Only files directly in ~mods move; nothing else changes.
+        const std::string paks = unreal::findPaksDirectory(p.gameTree);
+        const std::string from = strings::toLowerAscii(paks) + "/~mods/";
+        std::size_t moved = 0;
+        std::size_t remaining = 0;
+        for (auto& entry : p.layout.mapping) {
+            const std::string folded = strings::toLowerAscii(entry.second);
+            if (paks.empty() || !strings::startsWith(folded, from)) continue;
+            if (entry.second.find('/', from.size()) != std::string::npos) {
+                ++remaining;
+                continue;
+            }
+            entry.second = paks + "/" + entry.second.substr(from.size());
+            ++moved;
+        }
+        p.placementApplied = moved > 0 && remaining == 0;
+        if (p.placementApplied) {
+            if (strings::equalsIgnoreCaseAscii(p.layout.targetPrefix, paks + "/~mods")) p.layout.targetPrefix = paks;
+            p.layout.evidence.push_back("Test placement chosen by you: directly in " + paks + " instead of " + paks + "/~mods.");
+        }
+    }
 
     // 3. Content checks on the mapped paths.
     AnalysisInput analysisInput;

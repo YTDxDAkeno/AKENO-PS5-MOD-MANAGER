@@ -201,15 +201,17 @@ struct PackageSetFiles {
     std::uint64_t containerId = 0, packageId = 0;
 };
 
+// `bulkData`: also a BulkData chunk for the package (as textures, meshes and audio have).
 inline PackageSetFiles packageSet(const std::string& packageName, const std::vector<std::string>& imports,
-                                  std::uint64_t containerId = 0xe4a7420854dad984ull) {
+                                  std::uint64_t containerId = 0xe4a7420854dad984ull, bool bulkData = false) {
     PackageSetFiles set;
     set.containerId = containerId;
     set.packageId = unreal::packageIdFromName(packageName);
     const std::string assetFile = packageName.substr(packageName.rfind('/') + 1) + ".uasset";
-    auto files = ioStore(containerId, {{set.packageId, 1, zenPackage(packageName, imports)},
-                                       {containerId, 6, containerHeader(containerId, {set.packageId})}},
-                         assetFile);
+    std::vector<ChunkSpec> chunks{{set.packageId, 1, zenPackage(packageName, imports)}};
+    if (bulkData) chunks.push_back({set.packageId, 2, std::string(4096, 't')});
+    chunks.push_back({containerId, 6, containerHeader(containerId, {set.packageId})});
+    auto files = ioStore(containerId, chunks, assetFile);
     set.pak = pakStub();
     set.utoc = std::move(files.utoc);
     set.ucas = std::move(files.ucas);

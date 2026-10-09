@@ -43,8 +43,10 @@ compatibility result and every reason that blocks activation.
 
 PC files are **activated only with recorded evidence** that this game version
 loads them from that place and that such PC files work on its PS5 build (a game
-adapter). No title has that evidence yet, so Nexus mods can be checked and
-studied on the console but are not installed into the overlay.
+adapter, or your own test report). Data-only Unreal mods whose every console-side
+check passes can be installed as a **test install** after you confirm the risks;
+you then report whether it worked (see
+[pc-unreal-mods-on-ps5.md](investigations/pc-unreal-mods-on-ps5.md)).
 
 ## Downloads need Nexus Premium
 

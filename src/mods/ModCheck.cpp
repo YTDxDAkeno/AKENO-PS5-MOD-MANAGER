@@ -135,7 +135,10 @@ Json assessmentJson(const compatibility::Assessment& a) {
             {"conversions", listJson(a.conversions)},
             {"adapter", a.adapter},
             {"region", a.region},
-            {"summary", a.summary}};
+            {"summary", a.summary},
+            {"testInstallAvailable", a.testInstallAvailable},
+            {"testBlockers", listJson(a.testBlockers)},
+            {"testRisks", listJson(a.testRisks)}};
 }
 
 std::optional<compatibility::Assessment> assessmentFrom(const Json& d) {
@@ -167,7 +170,8 @@ std::optional<compatibility::Assessment> assessmentFrom(const Json& d) {
                                          : compatibility::EvidenceKind::Limitation;
             for (auto s : {compatibility::EvidenceSource::Archive, compatibility::EvidenceSource::Container,
                            compatibility::EvidenceSource::Game, compatibility::EvidenceSource::Catalogue,
-                           compatibility::EvidenceSource::Adapter, compatibility::EvidenceSource::Rules}) {
+                           compatibility::EvidenceSource::Adapter, compatibility::EvidenceSource::Rules,
+                           compatibility::EvidenceSource::Report}) {
                 if (compatibility::toString(s) == source) e.source = s;
             }
             e.text = json::displayString(item, "text", {}, kMaxTextBytes);
@@ -181,6 +185,11 @@ std::optional<compatibility::Assessment> assessmentFrom(const Json& d) {
     a.adapter = json::displayString(d, "adapter", {}, 100);
     a.region = json::displayString(d, "region", {}, 100);
     a.summary = json::displayString(d, "summary", {}, kMaxTextBytes);
+    a.testBlockers = listFrom(d, "testBlockers");
+    a.testRisks = listFrom(d, "testRisks");
+    // As with activation: a stored "available" never outweighs stored reasons against it.
+    a.testInstallAvailable = json::getBool(d, "testInstallAvailable").value_or(false) && a.testBlockers.empty() &&
+                             !a.activationAllowed;
     return a;
 }
 
@@ -514,6 +523,7 @@ Result<ModCheckReport> runModCheck(const ModCheckRequest& request, ModCheckEnvir
     result.modVersion = request.modVersion;
     result.titleId = request.titleId;
     result.checkedAt = strings::utcTimestamp();
+    result.localEvidence = request.localEvidence;
     result.archiveFormat = tree->listing.formatName;
     result.archiveFiles = tree->listing.fileCount;
     result.unpackedBytes = tree->listing.totalBytes;
@@ -543,6 +553,7 @@ Status saveReport(const security::SafeFs& fs, const AppPaths& paths, const ModCh
     document["version"] = report.modVersion;
     document["titleId"] = report.titleId;
     document["checkedAt"] = report.checkedAt;
+    document["localEvidence"] = report.localEvidence;
     document["archive"] = {{"format", report.archiveFormat},
                            {"files", report.archiveFiles},
                            {"unpackedBytes", report.unpackedBytes}};
@@ -597,6 +608,7 @@ Result<ModCheckReport> loadReport(const AppPaths& paths, const std::string& down
     r.modVersion = json::displayString(d, "version");
     r.titleId = json::displayString(d, "titleId");
     r.checkedAt = json::displayString(d, "checkedAt");
+    r.localEvidence = json::displayString(d, "localEvidence");
     if (const Json* archive = json::getObject(d, "archive")) {
         r.archiveFormat = json::displayString(*archive, "format");
         r.archiveFiles = static_cast<std::size_t>(std::max<std::int64_t>(0, json::getInt(*archive, "files").value_or(0)));

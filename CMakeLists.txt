@@ -141,6 +141,7 @@ add_library(akeno_core STATIC
     src/mods/ModPreparation.cpp
     src/install/OverlayManager.cpp
     src/install/InstallLog.cpp
+    src/install/TestReports.cpp
     src/diagnostics/DiagnosticExport.cpp
     src/app/CommandLine.cpp
     src/app/SystemCheck.cpp

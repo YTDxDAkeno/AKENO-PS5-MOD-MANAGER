@@ -181,4 +181,5 @@ Result:
   Manager `modinfo.ini`) are PC ONLY; PC-source mods (Nexus, GameBanana) may only add files,
   never replace the game's own, and only for folder games whose files Akeno can check.
   Since the compatibility engine (see compatibility-engine.md), PC-source files are activated
-  only with recorded evidence for the title and game version; none exists yet.
+  only with recorded evidence for the title and game version (a game adapter or the user's own
+  test report), or installed as a user-confirmed test install.

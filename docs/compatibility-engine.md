@@ -127,8 +127,41 @@ on the check screen and in the log:
 * for the curated catalogue: the catalogue rules allow it, and the outcome is `VERIFIED_PS5`,
   `LIKELY_COMPATIBLE` or `EXPERIMENTAL` (EXPERIMENTAL asks for confirmation).
 
-There is no override for these rules. Mods installed by 0.2.0-alpha from a PC source have no
-recorded decision; they can be turned off or removed, never re-activated.
+There is no override for these rules. The one exception the user can choose is a **test
+install** (below), which has its own, narrower rules. Mods installed by 0.2.0-alpha from a PC
+source have no recorded decision: applying the overlay turns them off (with the reason) and
+applies the other mods; installing the same download again replaces the old copy with a checked
+one.
+
+### Test installs (`Assessment::testInstallAvailable`)
+
+Research and rules: `docs/investigations/pc-unreal-mods-on-ps5.md`. A PC mod whose activation is
+blocked only for lack of evidence may be installed as a test after the user confirms its risks,
+when all of these hold (each failing one is listed under "No test install, because"):
+
+* category A/B, not INCOMPATIBLE or NEEDS_CONVERSION, no blocking finding, no recorded crash of
+  this mod version on this game version;
+* only complete, verified Unreal package sets are installed; no encryption; compression only
+  with methods the game's own containers use; IoStore chunks `ExportBundleData` and
+  `ContainerHeader` only (no bulk data or shaders: those are platform formats); classic paks with
+  `.uasset`/`.uexp` only;
+* the game's package folder was read, its containers are not signed, and every file is a new file
+  inside it (nothing is replaced or hidden).
+
+The check screen shows the test section with its risks; CROSS installs into the proposed folder
+(`<paks>/~mods`), SQUARE directly into `<paks>`. The stored mod records `test`, the placement,
+the game version and the assessed outcome; its `outcome` is `EXPERIMENTAL`. In Installed Mods,
+OPTIONS records the result:
+
+| Result | Effect |
+|---|---|
+| works | a `report` adapter (`install::makeTestReportAdapter`) marks the folder as loaded by this game version (loading `verified`, mapping `established`) and this mod version as working there (`VERIFIED_PS5`, activation allowed). Other mods still need their own test: one working mod says nothing about another's content. |
+| no effect | recorded; the other placement can be tested (it replaces this test install) |
+| crashed | the mod is turned off and stays off; no further test of this mod version on this game version |
+
+Reports are local to the console (`mods/<TITLE_ID>/state.json`), labelled as the user's own in the
+evidence (`[supports, report]`), and stored checks are redone when they change
+(`ModCheckReport::localEvidence`).
 
 ## Extension points
 
@@ -150,6 +183,13 @@ offered on the check screen when `canConvert` says it applies. Offering is not c
 outcome stays `NEEDS_CONVERSION` until a converted result has been analysed like any other mod.
 No provider ships, and no generic conversion of PC-cooked Unreal assets is attempted.
 
+## File names
+
+When every name in the installed game is lower case (PS5 packaging), new files and folders are
+lower-cased too (`GameTree::lowerCaseNames`), so an engine that lower-cases paths before opening
+them finds them; existing folders always take the game's spelling. Curated manifests keep their
+tested spelling. Names that collide after lower-casing invalidate the mapping.
+
 ## What is verified where
 
 | Claim | Host tests | Needs a PS5 |
@@ -158,7 +198,8 @@ No provider ships, and no generic conversion of PC-cooked Unreal assets is attem
 | Wrapper detection and mapping rules | yes | - |
 | Activation gating, legacy PC state, rollback, journal, logging | yes (permission-fault tests need an unprivileged runner) | - |
 | Read-only game listing and container probe never write | yes (hashes before/after) | behaviour of PS5 filesystems (nullfs, exFAT, PFS) |
-| A PS5 game mounts containers from `~mods` | - | yes, per title and version |
+| Test-install rules, placements, reports, crash lock-out, legacy replacement | yes | - |
+| A PS5 game mounts containers from `~mods` (or `Content/Paks`) | - | yes, per title and version: a test install answers it |
 | A PC-cooked package works on the PS5 build | - | yes, per title, version and mod |
 | ShadowMountPlus mounted the overlay; the game opened the files | - | yes (SMP debug.log, game behaviour) |
 
@@ -175,9 +216,9 @@ Nothing in this list is implemented yet; each step needs evidence before code cl
    package of the same id: container versions, package summary versions, import tables and
    export class names (all readable from uncompressed, unencrypted data). Mismatches are hard
    evidence against; matches are evidence for, never proof.
-3. **Experiment mode with explicit evidence capture.** An opt-in flow for one mod at a time:
-   publish, ask the user to start the game, collect SMP's debug.log and a short questionnaire,
-   and store the result as a hardware record. Never for overlays with loaders or code.
+3. **Experiment mode with explicit evidence capture.** Implemented as test installs (above) with
+   works / no effect / crashed reports. Not yet: attaching SMP's debug.log to a report, and
+   sharing reports (for example as catalogue entries) between consoles.
 4. **Conversion providers, one game at a time.** Candidates: repackaging loose cooked assets
    into an IoStore container for a game whose loading is established (needs an IoStore writer
    and the game's container settings); config-file translation where the PS5 location is

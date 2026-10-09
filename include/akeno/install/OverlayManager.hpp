@@ -23,6 +23,7 @@
 #include "akeno/core/Result.hpp"
 #include "akeno/compatibility/CompatibilityEngine.hpp"
 #include "akeno/games/GameInfo.hpp"
+#include "akeno/install/TestReports.hpp"
 #include "akeno/mods/Catalog.hpp"
 #include "akeno/providers/IModProvider.hpp"
 #include "akeno/security/SafeFs.hpp"
@@ -61,6 +62,14 @@ struct InstalledMod {
     std::string archiveRoot;        // archive folder that was mapped
     std::string targetPrefix;       // game folder it was mapped to
     std::string archiveSha256;      // of the verified download
+    std::string gameVersion;        // of the game when it was installed
+    // A test install the user confirmed (TestReports.hpp); activationAllowed is true for it, and
+    // `outcome` is EXPERIMENTAL while assessedOutcome keeps what the check found on its own.
+    bool test = false;
+    TestPlacement testPlacement = TestPlacement::ModsFolder;
+    std::string assessedOutcome;
+    TestResult testResult = TestResult::Untested;
+    std::string testReportedAt;
 };
 
 // mods/<TITLE_ID>/state.json
@@ -76,6 +85,8 @@ struct TitleState {
 
     std::size_t enabledCount() const;
     const InstalledMod* find(const std::string& downloadId) const;
+    // The test installs of this title and their reported results.
+    std::vector<TestRecord> testRecords() const;
 };
 
 struct InstallEnvironment {
@@ -113,6 +124,10 @@ struct InstallRequest {
     std::string contentId;
     bool installedPkg = false;
     std::string archiveSha256;  // verified at download time; logged, never re-derived from names
+    // The user confirmed a test install (compatibility::Assessment::testInstallAvailable). Refused
+    // when the check does not offer one; ignored when the mod may be installed anyway.
+    bool test = false;
+    TestPlacement placement = TestPlacement::ModsFolder;
 };
 
 // The title whose overlay is changed. `mounted` and `installedPkg` come from ShadowMountPlus.
@@ -131,6 +146,9 @@ struct ApplyResult {
     std::uint64_t bytes = 0;
     bool vanilla = false;  // no overlay is active afterwards
     std::filesystem::path backport;
+    // Enabled mods Akeno turned off instead of activating, with the reason (for example mods an
+    // older version installed without a checked path). The others are applied regardless.
+    std::vector<std::string> turnedOff;
 };
 
 std::filesystem::path statePath(const AppPaths& paths, const std::string& titleId);
@@ -153,5 +171,10 @@ Status setModEnabled(InstallEnvironment& env, const std::string& titleId, const 
 Result<ApplyResult> setVanilla(const TitleTarget& target, InstallEnvironment& env);
 // Deletes a stored mod; it must be disabled and the overlay applied without it first.
 Status removeStoredMod(InstallEnvironment& env, const std::string& titleId, const std::string& downloadId);
+
+// Records what happened after a test install. `Crashed` also turns the mod off; the caller then
+// applies the overlay. Returns whether the mod was turned off. Only test installs take a result.
+Result<bool> reportTestResult(InstallEnvironment& env, const std::string& titleId, const std::string& downloadId,
+                              TestResult result);
 
 }  // namespace akeno::install

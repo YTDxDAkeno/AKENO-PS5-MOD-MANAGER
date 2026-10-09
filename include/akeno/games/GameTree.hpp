@@ -42,11 +42,15 @@ struct GameTree {
     // not exist keep the given spelling. "Dawnwalker/Content/Paks/~mods" -> "dawnwalker/content/paks/~mods".
     std::string respell(std::string_view path) const;
     std::vector<std::string> topLevel() const;  // spelled as on disk
+    // True when every listed name is lower case, as PS5 packaging stores game files. On such a
+    // game's case-sensitive filesystem, new files get lower-case names too (ArchiveLayout).
+    bool lowerCaseNames() const { return lowerCaseOnly_; }
     // Builds the case-insensitive index; call after filling `entries` by hand (tests).
     void index();
 
 private:
     std::map<std::string, std::size_t> lookup_;  // lower-case path -> entry
+    bool lowerCaseOnly_ = false;
 };
 
 struct GameTreeLimits {

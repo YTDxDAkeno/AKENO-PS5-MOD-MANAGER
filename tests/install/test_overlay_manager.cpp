@@ -331,7 +331,7 @@ TEST_CASE("activation rechecks PC provenance after a game update adds a target")
     CHECK(readText(f.backport() / "data" / "new.bin") == "PC data");
 }
 
-TEST_CASE("PC mods stored without a recorded decision can be turned off but not activated again") {
+TEST_CASE("PC mods stored without a recorded decision are turned off; the other mods are still applied") {
     Fixture f;
     auto env = f.env();
     // Reproduces a state written by 0.2.0-alpha: a Nexus mod whose wrapper folder was copied as is.
@@ -355,13 +355,24 @@ TEST_CASE("PC mods stored without a recorded decision can be turned off but not 
     REQUIRE(legacy.ok());
     CHECK_FALSE(legacy->mods[0].activationRecorded);
 
+    // A second, valid mod: the old one must not keep it off.
+    REQUIRE(storeMod(f.request("good-mod", {{"data/good.bin", "B", AE_IFREG, "", ""}}), env).ok());
     auto applied = applyOverlay(kTarget, env);
-    REQUIRE_FALSE(applied.ok());
-    CHECK(applied.error().message.find("without a verified installation path") != std::string::npos);
-    CHECK(readText(f.backport() / "Better Carry Weight x10" / "x_P.bin") == "A");  // unchanged, not rebuilt
-    REQUIRE(setModEnabled(env, kTarget.titleId, "dac30f1aa5840955", false).ok());
-    REQUIRE(applyOverlay(kTarget, env).ok());  // turning it off removes Akeno's overlay
-    CHECK_FALSE(fs::exists(f.backport()));
+    REQUIRE(applied.ok());
+    REQUIRE(applied->turnedOff.size() == 1);
+    CHECK(applied->turnedOff[0].find("older Akeno") != std::string::npos);
+    CHECK(applied->mods == 1);
+    CHECK(readText(f.backport() / "data" / "good.bin") == "B");
+    CHECK_FALSE(fs::exists(f.backport() / "Better Carry Weight x10"));
+    auto after = loadTitleState(env, kTarget.titleId);
+    REQUIRE(after.ok());
+    CHECK_FALSE(after->find("dac30f1aa5840955")->enabled);  // recorded as off
+    // Turning it on again turns it straight off again.
+    REQUIRE(setModEnabled(env, kTarget.titleId, "dac30f1aa5840955", true).ok());
+    auto again = applyOverlay(kTarget, env);
+    REQUIRE(again.ok());
+    CHECK(again->turnedOff.size() == 1);
+    CHECK_FALSE(fs::exists(f.backport() / "Better Carry Weight x10"));
     REQUIRE(removeStoredMod(env, kTarget.titleId, "dac30f1aa5840955").ok());
 }
 

@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <set>
 
+#include "akeno/unreal/UnrealFormats.hpp"
+
 #include "akeno/core/Strings.hpp"
 #include "akeno/unreal/CityHash.hpp"
 
@@ -114,6 +116,7 @@ std::string_view toString(EvidenceSource source) noexcept {
         case EvidenceSource::Catalogue: return "catalogue";
         case EvidenceSource::Adapter: return "adapter";
         case EvidenceSource::Rules: return "rules";
+        case EvidenceSource::Report: return "report";
     }
     return "rules";
 }
@@ -253,6 +256,7 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
     // Catalogue and provenance.
     bool incompatible = false;
     bool needsConversion = false;
+    std::string conversionWhy;
     if (mod.curated) {
         switch (mod.catalogueStatus) {
             case CompatibilityStatus::Verified:
@@ -268,6 +272,7 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
                 break;
             case CompatibilityStatus::PcOnly:
                 needsConversion = true;
+                conversionWhy = "the Akeno catalogue marks it as a PC mod that needs a PS5 port";
                 add(EvidenceKind::Against, EvidenceSource::Catalogue, "The Akeno catalogue marks it as a PC mod that needs a PS5 port.");
                 break;
             case CompatibilityStatus::Incompatible:
@@ -389,9 +394,28 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
         }
         if (!ue->looseAssets.empty() && gu->maxTocVersion > 0) {
             needsConversion = true;
+            conversionWhy = "loose .uasset/.uexp files would have to be packaged into an IoStore container";
             add(EvidenceKind::Against, EvidenceSource::Container,
                 "Loose .uasset/.uexp files: this game loads packages from IoStore containers, so they would have to be "
                 "packaged into a container first.");
+        }
+        if (gu->maxTocVersion > 0) {
+            // UE5's package loader reads packages from IoStore containers only; a classic .pak with
+            // cooked packages is not seen by it (PC modders convert such paks, for example with retoc).
+            for (const auto& set : ue->sets) {
+                if (set.kind != unreal::PackageSetKind::LegacyPak || !set.pak || set.pak->status != unreal::ParseStatus::Parsed) continue;
+                const bool packages = std::any_of(set.pak->files.begin(), set.pak->files.end(), [](const std::string& file) {
+                    const std::string ext = extensionOf(file);
+                    return ext == "uasset" || ext == "umap";
+                });
+                if (!packages) continue;
+                needsConversion = true;
+                conversionWhy = "the classic .pak " + set.stem + " holds cooked packages, which this IoStore game does not load from a .pak";
+                add(EvidenceKind::Against, EvidenceSource::Container,
+                    "The classic .pak " + set.stem + " contains cooked packages, but this game loads packages from IoStore "
+                    "(.utoc/.ucas) containers, so it would have to be converted first.");
+                break;
+            }
         }
     }
     if (ue != nullptr) {
@@ -438,7 +462,12 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
     for (const auto& adapter : registry.adapters()) {
         if (!adapter->appliesTo(game.titleId)) continue;
         a.adapter = adapter->id();
-        if (adapter->modVerified(mod, game)) modRecord = true;
+        const EvidenceSource source = adapter->evidenceSource();
+        if (adapter->modVerified(mod, game)) {
+            modRecord = true;
+            add(EvidenceKind::Supports, source,
+                "'" + adapter->id() + "' records this mod version as working on the installed game " + versionText + ".");
+        }
         for (const auto& convention : adapter->conventions()) {
             if (!mapped) break;
             const std::string directory = strings::toLowerAscii(convention.directory);
@@ -454,14 +483,14 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
             if (versionOk) {
                 loadingVerified = true;
                 pcAssetsVerified = pcAssetsVerified || convention.pcCookedAssetsVerified;
-                add(EvidenceKind::Supports, EvidenceSource::Adapter,
-                    "Game rule '" + adapter->id() + "': the game loads these files from " + convention.directory + " (" +
+                add(EvidenceKind::Supports, source,
+                    "'" + adapter->id() + "': the game loads these files from " + convention.directory + " (" +
                         convention.evidence + ").");
             } else {
                 std::string versions;
                 for (const auto& v : convention.verifiedVersions) versions += versions.empty() ? v : ", " + v;
-                add(EvidenceKind::Limitation, EvidenceSource::Adapter,
-                    "Game rule '" + adapter->id() + "' covers " + convention.directory + " but was verified for " +
+                add(EvidenceKind::Limitation, source,
+                    "'" + adapter->id() + "' covers " + convention.directory + " but was verified for " +
                         (versions.empty() ? std::string("no version") : "version " + versions) + ", not the installed " +
                         versionText + ".");
             }
@@ -602,6 +631,147 @@ Assessment assess(const ModFacts& mod, const GameFacts& game, const Registry& re
     for (const auto& conflict : mod.installedConflicts) {
         a.risks.push_back(strings::concat("Replaces ", conflict.count, " file(s) of the installed mod ", conflict.otherName,
                                           "; the mod later in the load order wins."));
+    }
+
+    // Test install: what still has to hold when the user takes the remaining risk themselves.
+    if (mod.pcSource && !mod.curated && !a.activationAllowed) {
+        std::vector<std::string>& no = a.testBlockers;
+        auto firstAgainst = [&](std::initializer_list<EvidenceSource> sources) {
+            for (const auto& item : a.evidence) {
+                if (item.kind == EvidenceKind::Against &&
+                    std::find(sources.begin(), sources.end(), item.source) != sources.end()) {
+                    return item.text;
+                }
+            }
+            return std::string();
+        };
+        if (categoryD) no.push_back("It contains code, system files or damaged containers. Akeno never installs those, also not as a test.");
+        if (categoryC) no.push_back("It needs a PC-only runtime or loader. A test cannot provide that.");
+        if (!categoryD && !categoryC && incompatible) {
+            no.push_back("It is incompatible with the installed game: " +
+                         firstAgainst({EvidenceSource::Container, EvidenceSource::Game, EvidenceSource::Catalogue}));
+        }
+        if (needsConversion) no.push_back("It needs a conversion that Akeno does not have: " + conversionWhy + ".");
+        if (analysis.hasBlockers()) no.push_back("The checks found problems that block installing.");
+        for (const auto& adapter : registry.adapters()) {
+            if (!adapter->appliesTo(game.titleId)) continue;
+            if (auto problem = adapter->knownProblem(mod, game)) no.push_back(*problem);
+        }
+        if (!modIsUnreal || ue->sets.empty()) {
+            no.push_back("Tests are offered only for Unreal Engine package mods (.pak, .utoc and .ucas files).");
+        } else {
+            std::set<std::string> members;
+            for (const auto& set : ue->sets) members.insert(set.members.begin(), set.members.end());
+            for (const auto& file : analysis.files) {
+                if (!file.installPath.empty() && members.count(file.archivePath) == 0) {
+                    no.push_back("It also installs files that are not Unreal package files (for example " + file.archivePath +
+                                 "); only package files can be tested.");
+                    break;
+                }
+            }
+            if (ue->compatibilityUnknown) {
+                no.push_back("Parts of its containers could not be checked" +
+                             (ue->unknowns.empty() ? std::string(".") : ": " + ue->unknowns.front()));
+            }
+            const std::vector<std::string> gameMethods = gu != nullptr ? gu->compressionMethods : std::vector<std::string>{};
+            auto gameUses = [&](const std::string& method) {
+                return std::any_of(gameMethods.begin(), gameMethods.end(),
+                                   [&](const std::string& m) { return strings::equalsIgnoreCaseAscii(m, method); });
+            };
+            for (const auto& set : ue->sets) {
+                const std::string name = set.directory.empty() ? set.stem : set.directory + "/" + set.stem;
+                std::vector<std::string> methods;
+                if (set.kind == unreal::PackageSetKind::IoStore && set.toc) {
+                    const auto& toc = *set.toc;
+                    if (toc.encrypted()) no.push_back(name + " is encrypted; the game would need the mod's key.");
+                    if (toc.compressed()) methods = toc.compressionMethods;
+                    if (!set.companionsVerified) no.push_back(name + ": its .utoc and .ucas could not be verified to belong together.");
+                    if (!set.header || set.header->status != unreal::ParseStatus::Parsed) {
+                        no.push_back(name + ": its container header could not be read, so its contents are not known.");
+                    }
+                    std::set<std::string> platformData;
+                    for (const auto& chunk : toc.chunks) {
+                        if (chunk.type != static_cast<std::uint8_t>(unreal::IoChunkType::ExportBundleData) &&
+                            chunk.type != static_cast<std::uint8_t>(unreal::IoChunkType::ContainerHeader)) {
+                            platformData.insert(unreal::chunkTypeName(chunk.type));
+                        }
+                    }
+                    if (!platformData.empty()) {
+                        std::vector<std::string> list(platformData.begin(), platformData.end());
+                        no.push_back(name + " contains " + shortList(list) + " data: textures, meshes, audio or shaders, which "
+                                     "PC and PS5 builds store in different formats. Only package data without such parts can be tested.");
+                    }
+                } else if (set.kind == unreal::PackageSetKind::LegacyPak && set.pak && set.pak->status == unreal::ParseStatus::Parsed) {
+                    const auto& pak = *set.pak;
+                    if (pak.encryptedIndex) no.push_back(name + " is encrypted; the game would need the mod's key.");
+                    if (!pak.filesComplete) no.push_back(name + ": the list of files inside could not be read.");
+                    methods = pak.compressionMethods;
+                    std::set<std::string> other;
+                    for (const auto& file : pak.files) {
+                        const std::string ext = extensionOf(file);
+                        if (ext != "uasset" && ext != "uexp") other.insert(ext.empty() ? std::string("(no extension)") : "." + ext);
+                    }
+                    if (!other.empty()) {
+                        std::vector<std::string> list(other.begin(), other.end());
+                        no.push_back(name + " contains " + shortList(list) + " files, which can hold platform-specific data. Only "
+                                     ".uasset/.uexp package data can be tested.");
+                    }
+                } else {
+                    no.push_back(name + " could not be read completely.");
+                }
+                for (const auto& method : methods) {
+                    if (method.empty() || strings::equalsIgnoreCaseAscii(method, "none")) continue;
+                    if (!gameUses(method)) {
+                        no.push_back(name + " is compressed with " + method + ", which the game's own containers do not use.");
+                        break;
+                    }
+                }
+            }
+        }
+        if (!mapped) {
+            no.push_back("No installation path could be determined.");
+        } else if (gu == nullptr || !gu->probed) {
+            no.push_back("The game's Unreal package folder could not be read" +
+                         std::string(gu != nullptr && !gu->reason.empty() ? " (" + gu->reason + ")" : "") +
+                         ", so a test cannot be prepared safely.");
+        } else {
+            const std::string paks = strings::toLowerAscii(gu->paksDirectory) + "/";
+            for (const auto& file : analysis.files) {
+                if (file.installPath.empty()) continue;
+                if (!strings::startsWith(strings::toLowerAscii(file.installPath), paks)) {
+                    no.push_back("The files would not be placed in the game's package folder " + gu->paksDirectory + ".");
+                    break;
+                }
+            }
+            if (gu->anySignedContainer || gu->signatureFiles) {
+                no.push_back("The game's own containers are signed. A build that checks signatures refuses an unsigned mod "
+                             "container and can stop at start-up; Akeno cannot sign one.");
+            }
+        }
+        for (const auto& file : analysis.files) {
+            if (file.installPath.empty() || file.target == mods::TargetState::New) continue;
+            no.push_back(file.target == mods::TargetState::Unknown
+                             ? "The game's file list is incomplete, so it is not certain that " + file.installPath +
+                                   " is a new file. A test only adds files."
+                             : file.installPath + " would replace or hide a game file. A test only adds files.");
+            break;
+        }
+        a.testInstallAvailable = no.empty();
+        if (a.testInstallAvailable) {
+            const std::string where = layout.targetPrefix.empty() ? target : layout.targetPrefix;
+            a.testRisks.push_back("Nothing confirms that this PS5 game (" + game.titleId + ", " + versionText +
+                                  ") loads extra package files from " + where + ". The test shows it: if nothing changes "
+                                  "in the game, it does not.");
+            a.testRisks.push_back("The files were made for the PC version. If the PS5 build's game code differs from the PC "
+                                  "build the mod was made for, the game can crash when it loads them.");
+            for (const auto& risk : a.risks) a.testRisks.push_back(risk);
+            if (game.version.empty()) {
+                a.testRisks.push_back("The installed game's version is unknown, so a later test result cannot be tied to it.");
+            }
+            a.testRisks.push_back("Back up your saved data before playing. Changed gameplay values can end up in your saves.");
+            a.testRisks.push_back("If the game crashes or does not start, turn the mod off in Installed Mods (or use Vanilla). "
+                                  "The game's own files and the console are not changed.");
+        }
     }
     a.summary = std::string(toString(a.outcome)) + " (category " + std::string(toString(a.category)) + "): path " +
                 std::string(mods::toString(a.mappingConfidence)) + (mapped ? " (" + target + ")" : std::string()) +

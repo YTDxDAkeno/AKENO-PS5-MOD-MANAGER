@@ -314,6 +314,13 @@ void addArchiveTree(ICanvas& canvas, std::vector<draw::DocLine>& lines, const mo
     }
 }
 
+// "<project>/content/paks/~mods" -> "<project>/content/paks"; empty for any other folder.
+std::string paksFolderOf(const std::string& target) {
+    constexpr std::string_view kMods = "/~mods";
+    if (target.size() <= kMods.size() || target.compare(target.size() - kMods.size(), kMods.size(), kMods) != 0) return {};
+    return target.substr(0, target.size() - kMods.size());
+}
+
 std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCheckReport& report, int width) {
     using draw::addHeadingLine;
     using draw::addWrappedLines;
@@ -336,16 +343,41 @@ std::vector<draw::DocLine> buildCheckDocument(ICanvas& canvas, const mods::ModCh
                             (c.loading == compatibility::LoadingSupport::Unverified ? "  (nothing shows the game reads files from there)" : ""));
     row("PS5 platform compatibility", std::string(compatibility::toString(c.platform)));
     row("Activation", c.activationAllowed ? (c.needsConfirmation ? "allowed after you confirm (experimental)" : "allowed")
-                                          : "blocked",
-        c.activationAllowed ? theme::kOk : theme::kError);
+                      : c.testInstallAvailable ? "not automatic; a test install is possible (CROSS)"
+                                               : "blocked",
+        c.activationAllowed ? theme::kOk : c.testInstallAvailable ? theme::kWarning : theme::kError);
     if (!c.summary.empty()) addWrappedLines(canvas, lines, c.summary, width, FontRole::Small, theme::kTextSecondary);
+    if (c.testInstallAvailable) {
+        addHeadingLine(lines, "Test install (your decision)");
+        addWrappedLines(canvas, lines,
+                        "Akeno does not activate this PC mod on its own, but every check it can make on the console "
+                        "passed: it only adds data-only package files to the game's package folder and contains no code. "
+                        "CROSS installs it as a test after you confirm the risks below.",
+                        width, FontRole::Caption, theme::kTextPrimary, false, theme::kWarning);
+        if (const std::string paks = paksFolderOf(layout.targetPrefix); !paks.empty()) {
+            addWrappedLines(canvas, lines,
+                            "SQUARE: test it directly in " + paks + " instead of " + layout.targetPrefix +
+                                " (try this if the first test had no effect).",
+                            width, FontRole::Caption, theme::kTextPrimary);
+        }
+        for (const auto& risk : c.testRisks) {
+            addWrappedLines(canvas, lines, risk, width, FontRole::Small, theme::kTextSecondary, false, theme::kWarning);
+        }
+        addWrappedLines(canvas, lines, "After playing, report what happened in Installed Mods (OPTIONS).", width,
+                        FontRole::Small, theme::kTextSecondary);
+    } else if (!c.testBlockers.empty()) {
+        addHeadingLine(lines, "No test install, because");
+        for (const auto& reason : c.testBlockers) {
+            addWrappedLines(canvas, lines, reason, width, FontRole::Caption, theme::kTextPrimary, false, theme::kError);
+        }
+    }
+
     if (!c.blockedReasons.empty()) {
         addHeadingLine(lines, "Blocked because");
         for (const auto& reason : c.blockedReasons) {
             addWrappedLines(canvas, lines, reason, width, FontRole::Caption, theme::kTextPrimary, false, theme::kError);
         }
     }
-
     addHeadingLine(lines, "What it is");
     row("Detected engine", c.engine.empty() ? "not recognised" : c.engine);
     row("Mod format", c.modFormat.empty() ? "-" : c.modFormat);
@@ -528,6 +560,12 @@ void ModCheckScreen::update(UiEnv& env) {
     if (confirmInstall_.take(confirmed) && confirmed) {
         env.commands.installChecked(downloadId_);
     }
+    if (confirmTest_.take(confirmed) && confirmed) {
+        env.commands.testInstallChecked(downloadId_, install::TestPlacement::ModsFolder);
+    }
+    if (confirmTestPaks_.take(confirmed) && confirmed) {
+        env.commands.testInstallChecked(downloadId_, install::TestPlacement::PaksFolder);
+    }
     if (!requested_) {
         requested_ = true;
         env.commands.checkDownload(downloadId_, false);
@@ -551,9 +589,32 @@ NavRequest ModCheckScreen::handle(Action action, UiEnv& env) {
                 env.commands.checkDownload(downloadId_, true);
             }
             break;
+        case Action::Tertiary:
         case Action::Confirm: {
             if (!mine || view.running || !view.report || !view.report->plan) break;
             const mods::InstallPlan& plan = *view.report->plan;
+            const compatibility::Assessment& c = view.report->assessment;
+            const std::string paks = paksFolderOf(view.report->layout.targetPrefix);
+            if (!plan.executable && c.testInstallAvailable) {
+                const bool inPaks = action == Action::Tertiary;
+                if (inPaks && paks.empty()) break;
+                if (env.commands.installBusy()) {
+                    env.showToast("Another mod operation is running.", ToastKind::Warning);
+                    break;
+                }
+                const std::string folder = inPaks ? paks : view.report->layout.targetPrefix;
+                std::vector<std::string> lines{
+                    strings::concat(plan.files, " package files go to ", folder,
+                                    "/ in the game's overlay. The game's own files are not changed."),
+                    "Nothing confirms that this PC mod works on PS5: the game may ignore it, or crash when it loads it. "
+                    "Back up your saved data first.",
+                    "After playing, report the result in Installed Mods (OPTIONS). Reporting a crash turns the mod off.",
+                };
+                return NavRequest::push(std::make_unique<ConfirmScreen>(
+                    "Test this PC mod?", std::move(lines), "Test install",
+                    inPaks ? confirmTestPaks_.callback() : confirmTest_.callback(), true));
+            }
+            if (action == Action::Tertiary) break;
             if (!plan.executable) {
                 env.showToast(plan.notExecutableReason.empty() ? "This mod cannot be installed."
                                                                : plan.notExecutableReason,
@@ -601,6 +662,12 @@ std::vector<ButtonHint> ModCheckScreen::hints(const UiEnv& env) const {
                                   {ButtonHint::Button::Circle, "Back"}};
     if (view.downloadId == downloadId_ && view.report && view.report->plan && view.report->plan->executable) {
         hints.push_back({ButtonHint::Button::Cross, "Install"});
+    } else if (view.downloadId == downloadId_ && view.report && view.report->plan &&
+               view.report->assessment.testInstallAvailable) {
+        hints.push_back({ButtonHint::Button::Cross, "Test install"});
+        if (!paksFolderOf(view.report->layout.targetPrefix).empty()) {
+            hints.push_back({ButtonHint::Button::Square, "Test in Paks"});
+        }
     }
     return hints;
 }
@@ -652,7 +719,9 @@ void ModCheckScreen::render(ICanvas& canvas, UiEnv& env) {
     x += draw::badge(canvas, x, badgeY, outcomeLabel(c.outcome), outcomeColor(c.outcome)) + 16;
     x += draw::badge(canvas, x, badgeY, "PATH " + upperCase(mods::toString(c.mappingConfidence)),
                      c.mappingConfidence == mods::MappingConfidence::Established ? theme::kAccent : theme::kNeutral) + 16;
-    if (a.hasBlockers() || !c.activationAllowed) {
+    if (!c.activationAllowed && c.testInstallAvailable && !a.hasBlockers()) {
+        draw::badge(canvas, x, badgeY, "TEST POSSIBLE", theme::kWarning);
+    } else if (a.hasBlockers() || !c.activationAllowed) {
         draw::badge(canvas, x, badgeY, a.hasBlockers() ? "BLOCKED" : "ACTIVATION BLOCKED", theme::kError);
     } else if (c.needsConfirmation) {
         draw::badge(canvas, x, badgeY, "ASKS FIRST", theme::kWarning);
